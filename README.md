@@ -1,4 +1,4 @@
-# 智能文章重点标注与分析系统
+# 智能文章重点分析与标注
 
 <p align="center">
   <a href="README_EN.md"><img src="https://img.shields.io/badge/Language-English-blue?logo=googletranslate&logoColor=white" alt="English" /></a>
