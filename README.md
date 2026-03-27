@@ -1,6 +1,6 @@
-# 智能文章重点标注与分析系统
+# 智能文章重点分析与标注
 
-> 基于 Vue 3 + Flask + DeepSeek-R1 / Qwen3.5-Plus 的 AI 文档深度分析与物理标注系统
+> 基于 Vue 3 + Flask + DeepSeek-R1 / Qwen3.5-Plus 的 AI 文档深度分析与物理标注
 
 ---
 
