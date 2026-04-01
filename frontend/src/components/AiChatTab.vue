@@ -30,7 +30,7 @@
       <div v-if="messages.length === 0" class="welcome-msg">
         <div class="welcome-icon">💬</div>
         <p class="welcome-text">你好！我是你的 AI 阅读助手</p>
-        <p class="welcome-hint">{{ hasDocument ? '我已阅读当前文档，可以回答你关于文档的某些问题。' : '上传文档后，我能结合文档内容为你提供深度解析。' }}</p>
+        <p class="welcome-hint">{{ hasDocument ? '我已阅读当前文档，可以回答你关于文档的问题。' : '上传文档后，我能结合文档内容为你提供深度解析。' }}</p>
         <div class="suggest-btns" v-if="hasDocument">
           <button class="suggest-btn" @click="sendSuggest('请总结这篇文档的核心内容')">📋 总结核心内容</button>
           <button class="suggest-btn" @click="sendSuggest('这篇文档最重要的论点是什么？')">🎯 最重要的论点</button>

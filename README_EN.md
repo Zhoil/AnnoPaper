@@ -1,4 +1,4 @@
-# Intelligent Document Annotation & Analysis System
+# AnnoPaper Intelligent Reading
 
 <p align="center">
   <a href="README.md"><img src="https://img.shields.io/badge/语言-中文-red?logo=googletranslate&logoColor=white" alt="中文" /></a>

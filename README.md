@@ -1,4 +1,4 @@
-# 智能文章重点分析与标注
+# AnnoPaper智阅
 
 <p align="center">
   <a href="README_EN.md"><img src="https://img.shields.io/badge/Language-English-blue?logo=googletranslate&logoColor=white" alt="English" /></a>
