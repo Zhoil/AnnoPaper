@@ -75,11 +75,11 @@
                     <span class="feature-icon">🧠</span>
                   </div>
                   <h3 class="feature-title">多模型 AI 分析</h3>
-                  <p class="feature-desc">接入 DeepSeek-R1 深度推理与 Qwen3.5-Plus 快速响应等多引擎模型，精准理解文章语义，自动归纳核心论点</p>
+                  <p class="feature-desc">接入 DeepSeek-R1 深度推理、Qwen3.5-Plus 快速响应与第三方多引擎模型，精准理解文章语义，自动归纳核心论点</p>
                   <ul class="feature-list">
                     <li>DeepSeek-R1 深度推理</li>
                     <li>Qwen3.5-Plus 快速分析</li>
-                    <li>结构化要点输出</li>
+                    <li>多选择引擎模型与结构化要点输出</li>
                   </ul>
                 </div>
 
@@ -89,7 +89,7 @@
                     <span class="feature-icon">🎯</span>
                   </div>
                   <h3 class="feature-title">物理坐标级标注</h3>
-                  <p class="feature-desc">基于 pdfplumber 文字坐标映射，在原始 PDF 上精确定位并高亮关键句，生成真实可下载的带注释文档</p>
+                  <p class="feature-desc">基于 PyMuPDF(fitz)、pdfplumber和reportlab 的三库协同文字坐标映射，在原始 PDF 上精确定位并高亮关键句，生成真实可下载的带注释文档</p>
                   <ul class="feature-list">
                     <li>坐标级精准定位</li>
                     <li>彩色分类高亮</li>

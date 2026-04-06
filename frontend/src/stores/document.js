@@ -9,7 +9,9 @@ export const useDocumentStore = defineStore('document', {
     uploadProgress: 0,
     history: [],
     historyTotal: 0,
-    apiProvider: 'deepseek'   // 当前选择的 API 提供商: 'deepseek' | 'qwen'
+    apiProvider: 'deepseek',   // 当前选择的 API 提供商: 'deepseek' | 'qwen' | 'pipellm'
+    apiModel: '',               // 前端指定的具体模型名（空串表示使用 provider 默认模型）
+    availableProviders: []      // 从后端获取的可用 provider 列表
   }),
 
   actions: {
@@ -23,6 +25,9 @@ export const useDocumentStore = defineStore('document', {
         const formData = new FormData()
         formData.append('file', file)
         formData.append('api_provider', this.apiProvider)  // 传递 API 提供商
+        if (this.apiModel) {
+          formData.append('api_model', this.apiModel)  // 传递具体模型
+        }
 
         const response = await axios.post('/api/upload', formData, {
           onUploadProgress: (progressEvent) => {
@@ -54,7 +59,8 @@ export const useDocumentStore = defineStore('document', {
       try {
         const response = await axios.post('/api/upload-url', {
           url,
-          api_provider: this.apiProvider  // 传递 API 提供商
+          api_provider: this.apiProvider,  // 传递 API 提供商
+          ...(this.apiModel ? { api_model: this.apiModel } : {})  // 传递具体模型
         })
 
         if (response.data.success) {
@@ -179,7 +185,29 @@ export const useDocumentStore = defineStore('document', {
     // 设置 API 提供商
     setApiProvider(provider) {
       this.apiProvider = provider
+      // 切换 provider 时重置模型为默认
+      this.apiModel = ''
       console.log(`🔄 API 提供商切换为: ${provider}`)
+    },
+
+    // 设置具体模型
+    setApiModel(model) {
+      this.apiModel = model
+      console.log(`🎯 模型切换为: ${model}`)
+    },
+
+    // 从后端获取可用 provider 列表
+    async fetchProviders() {
+      try {
+        const response = await axios.get('/api/providers')
+        if (response.data.success) {
+          this.availableProviders = response.data.providers
+          return response.data.providers
+        }
+      } catch (error) {
+        console.error('获取 provider 列表失败:', error)
+      }
+      return []
     },
 
     // 发送 AI 对话消息

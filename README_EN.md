@@ -7,11 +7,11 @@
   <a href="frontend/package.json"><img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white" alt="Vue 3" /></a>
   <a href="frontend/package.json"><img src="https://img.shields.io/badge/Node.js-16%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js" /></a>
   <a href="https://platform.deepseek.com/"><img src="https://img.shields.io/badge/DeepSeek--R1-LLM-6C47FF?logo=openai&logoColor=white" alt="DeepSeek-R1" /></a>
-  <img src="https://img.shields.io/badge/Version-v1.0.0-orange.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/Version-v3.0.0-orange.svg" alt="Version" />
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
 </p>
 
-> An AI-powered document deep analysis and physical annotation system built with Vue 3 + Flask + DeepSeek-R1 / Qwen3.5-Plus
+> An AI-powered document deep analysis and physical annotation system built with Vue 3 + Flask + DeepSeek-R1 / Qwen3.6-Plus / PipeLLM multi-engine architecture
 
 ---
 
@@ -23,6 +23,8 @@
 | Vue 3 (Composition API) | Reactive UI framework |
 | Pinia | Global state management (documents, API selection, chat history) |
 | Vite | Build tool with hot module replacement |
+| Axios | HTTP requests |
+| Marked | AI chat Markdown rendering |
 
 ### Backend
 | Technology | Purpose |
@@ -30,20 +32,37 @@
 | Flask | RESTful API server |
 | SQLite | Persistent storage for analysis records |
 | python-dotenv | Environment variable management (API key isolation) |
-| jieba | Chinese word segmentation (keyword statistics) |
+| jieba | Chinese word segmentation (keyword statistics fallback) |
+| Docling | Advanced document structure extraction (optional OCR) |
 
 ### PDF Processing (Three-Library Pipeline)
 | Technology | Role |
 |-----------|------|
-| **PyMuPDF (fitz)** | Image extraction, metadata reading, PDF page overlay/merge |
+| **PyMuPDF (fitz)** | Image extraction, metadata reading, PDF page overlay/merge, Docling fallback |
 | **pdfplumber** | Character-level precise coordinate extraction, table recognition |
 | **reportlab** | Transparent highlight overlay creation (vector graphics rendering) |
 
-### LLM APIs
+### LLM APIs (Three Switchable Engines)
 | Model | Purpose | Endpoint |
 |-------|---------|----------|
 | DeepSeek-R1 (`deepseek-reasoner`) | Document deep analysis (default), AI chat | DeepSeek API |
-| Qwen3.5-Plus (`qwen3.5-plus`) | Fast analysis (optional) | Alibaba Cloud DashScope |
+| Qwen3.6-Plus (`qwen3.6-plus`) | Fast analysis (optional), file upload | Alibaba Cloud DashScope |
+| PipeLLM (multi-model) | Third-party multi-engine selection (GPT-5.4 / Claude, etc.) | OpenAI-compatible API |
+
+---
+
+## Core Features
+
+- **Multi-Model AI Analysis**: One-click engine switching between DeepSeek / Qwen / PipeLLM; PipeLLM supports model dropdown selection
+- **PDF Physical Annotation**: Character-level coordinate positioning via pdfplumber, precise highlighting on original PDFs, generating downloadable annotated documents
+- **Multi-Format Support**: PDF, DOCX, DOC, HTML files and web URLs with unified cross-format analysis
+- **Two-Phase Analysis**: Phase 1 independently analyzes images and tables → Phase 2 full-text deep analysis (with chart context)
+- **Map-Reduce for Long Documents**: Auto-chunking for long documents → multi-round LLM calls → result merging, bypassing token limits
+- **Key Data Extraction**: Automatically identifies core experimental data and comparison metrics, displayed as cards
+- **Professional Word Cloud**: LLM-extracted core domain terminology, rendered by importance weight
+- **AI Chat**: Context-aware Q&A window linked to the current document
+- **Docling Enhanced Parsing**: Advanced document structure extraction with optional OCR, memory protection + automatic PyMuPDF fallback
+- **Non-Body Filtering**: Automatically filters references, appendices, author info, institutional metadata, and other non-body content
 
 ---
 
@@ -55,9 +74,10 @@ User uploads file
       ▼
 ┌─────────────────────────────────────────────────┐
 │                DocumentParser                   │
-│  .pdf  → EnhancedPDFParser                     │
+│  .pdf  → EnhancedPDFParser / DoclingParser      │
 │            ├── pdfplumber: extract text+tables  │
 │            ├── PyMuPDF:    extract images+meta  │
+│            ├── Docling:    deep structure (opt) │
 │            └── output: text + structured_content│
 │  .docx → python-docx                            │
 │  .doc  → win32com subprocess (solves COM/STA)  │
@@ -67,17 +87,24 @@ User uploads file
       │ text + structured_data
       ▼
 ┌─────────────────────────────────────────────────┐
-│                TextAnalyzer.analyze()            │
-│  1. Build extra_context (table/image hints)     │
-│  2. Call LLMService.analyze_text()              │
-│     ├── PDF: wrap with DeepSeek official format │
-│     │   [file name]: xxx.pdf                    │
-│     │   [file content begin]...[file content end]│
-│     └── Others: send text directly              │
-│  3. Parse JSON → _process_llm_result()          │
-│  4. Fallback to jieba segmentation on failure   │
+│            TextAnalyzer.analyze()               │
+│                                                 │
+│  ── Phase 1: Image + Table Analysis ──          │
+│  Extract image_items and table_items            │
+│  → LLMService.analyze_images(table_infos=...)  │
+│  → Generate media descriptions for Phase 2     │
+│                                                 │
+│  ── Phase 2: Full-Text Deep Analysis ──         │
+│  Build prompt + extra_context (with chart info) │
+│  → LLMService.analyze_text()                   │
+│    ├── Short docs: single LLM call             │
+│    └── Long docs: Map-Reduce chunked calls     │
+│  → Parse JSON result                            │
+│  → _process_llm_result() match to source text  │
+│  → Fallback to jieba segmentation on failure   │
 └─────────────────────────────────────────────────┘
-      │ keypoints + highlights + summary
+      │ keypoints + summary + key_data
+      │ + top_terms + statistics + highlights
       ▼
 ┌─────────────────────────────────────────────────┐
 │               Physical Annotation (optional)    │
@@ -94,7 +121,7 @@ User uploads file
 
 ## Prompt Engineering Design
 
-The system prompt is built around the core concept of **"penetrating analysis"**, guiding the model through six steps:
+The system prompt is built around the core concept of **"penetrating analysis"**:
 
 ### Core Principles
 
@@ -115,17 +142,36 @@ Automatically adjust the number of arguments (1–5) based on document length, a
     {
       "point": "Verbatim copy of the core claim from source",
       "point_page": 3,
-      "point_context": "Complete sentence containing point (15-30 chars, for disambiguation)",
+      "point_context": "Complete sentence containing point (15-30 chars)",
       "annotation_label": "Core Conclusion",
       "evidence": [
         {
-          "text": "Verbatim copy of supporting evidence from source",
+          "text": "Verbatim copy of supporting evidence",
           "page": 5,
-          "context": "Complete sentence containing evidence (disambiguation)"
+          "context": "Complete sentence containing evidence"
         }
       ],
       "importance": 95,
       "rationale": "Reason for the score"
+    }
+  ],
+  "key_data": [
+    {
+      "label": "Metric name",
+      "value": "94.5%",
+      "numeric": 94.5,
+      "unit": "%",
+      "type": "percentage",
+      "is_comparison": true,
+      "context": "Data context description",
+      "page": 5
+    }
+  ],
+  "top_terms": [
+    {
+      "term": "Domain terminology",
+      "weight": 95,
+      "category": "Core Technology"
     }
   ],
   "summary": "One-sentence summary",
@@ -134,10 +180,12 @@ Automatically adjust the number of arguments (1–5) based on document length, a
 ```
 
 **Field Design Intent:**
-- `point_page` / `page`: Provides a page hint to pdfplumber, compressing search scope from the full document to 3 pages, significantly improving location efficiency
-- `point_context`: When the same phrase appears multiple times on a page, the context sentence enables precise disambiguation
-- `annotation_label`: 4–6 character Chinese label rendered in the sidebar of the PDF annotation
-- `importance` (0–100): 95+ = core innovation; 80–94 = strong supporting argument; below 60 = filtered out
+- `point_page` / `page`: Page hint for pdfplumber, compressing search scope to 3 pages
+- `point_context`: Disambiguates when the same phrase appears multiple times on a page
+- `annotation_label`: 4–6 character label rendered in the PDF annotation sidebar
+- `importance` (0–100): 95+ = core innovation; 80–94 = strong support; below 60 = filtered out
+- `key_data`: Strictly filtered core quantitative data with `is_comparison` flag for comparison data
+- `top_terms`: LLM-extracted domain terminology for word cloud, weighted by importance, excluding names/institutions/stopwords
 
 ### Importance Scoring Criteria
 
@@ -231,12 +279,15 @@ The script automatically: checks Python/Node.js → installs Python dependencies
 Edit `backend/.env` (auto-generated on first run):
 
 ```env
+# Configure at least one provider to get started
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
 QWEN_API_KEY=your_qwen_api_key_here
+PIPELLM_API_KEY=your_pipellm_api_key_here
 ```
 
 - DeepSeek Key: https://platform.deepseek.com/
 - Qwen Key: https://bailian.console.aliyun.com/
+- PipeLLM Key: Obtain from the service provider
 
 ### Start the System
 
@@ -253,10 +304,11 @@ Open http://localhost:3000
 ```
 GraDesign_one/
 ├── backend/
-│   ├── app.py                  # Flask main app, RESTful routes
-│   ├── llm_service.py          # Multi-provider LLM service (DeepSeek / Qwen)
-│   ├── text_analyzer.py        # Text analyzer: LLM calls, result processing, PDF/DOCX annotation
+│   ├── app.py                  # Flask main app, RESTful routes + /api/providers
+│   ├── llm_service.py          # Multi-provider LLM service (DeepSeek / Qwen / PipeLLM)
+│   ├── text_analyzer.py        # Text analyzer: two-phase analysis, Map-Reduce, PDF annotation
 │   ├── pdf_parser_enhanced.py  # Enhanced PDF parser (text + tables + images)
+│   ├── pdf_parser_docling.py   # Docling PDF parser (structure extraction + fallback)
 │   ├── document_parser.py      # Document dispatcher: PDF/DOCX/DOC/HTML/URL routing
 │   ├── web_parser_enhanced.py  # Enhanced web page parser
 │   ├── database.py             # SQLite database operations
@@ -267,14 +319,22 @@ GraDesign_one/
 ├── frontend/
 │   └── src/
 │       ├── components/
-│       │   ├── Navbar.vue          # Top bar (with API engine toggle)
+│       │   ├── Navbar.vue          # Top bar (three-engine toggle + PipeLLM model selector)
 │       │   ├── DocumentViewer.vue  # Left panel: document/PDF viewer
-│       │   ├── Sidebar.vue         # Right panel (keypoints/summary/stats/AI chat)
-│       │   ├── AiChatTab.vue       # AI chat window (linked to current document context)
-│       │   ├── UploadModal.vue     # Upload modal
-│       │   └── HistoryModal.vue    # History records
-│       └── stores/
-│           └── document.js         # Pinia Store (document state, API selection, chat)
+│       │   ├── Sidebar.vue         # Right panel container
+│       │   ├── MainContent.vue     # Main content area layout
+│       │   ├── KeypointsTab.vue    # Keypoint cards (arguments + evidence expand)
+│       │   ├── SummaryTab.vue      # Summary + key data cards
+│       │   ├── StatisticsTab.vue   # Statistics + data comparison chart + word cloud
+│       │   ├── AiChatTab.vue       # AI chat window (linked to document context)
+│       │   ├── UploadModal.vue     # Upload modal (file + URL)
+│       │   ├── HistoryModal.vue    # History records
+│       │   ├── LoadingOverlay.vue  # Loading overlay
+│       │   └── ToastContainer.vue  # Global notification container
+│       ├── stores/
+│       │   └── document.js         # Pinia Store (document state, API/model selection, chat)
+│       └── composables/
+│           └── useToast.js         # Toast notification utility
 ├── install.bat                 # First-time installation script
 └── start.bat                   # Daily startup script
 ```
@@ -283,10 +343,11 @@ GraDesign_one/
 
 ## Notes
 
-- File size limit: 16 MB
+- File size limit: 16 MB (PDFs > 50 MB automatically fall back to PyMuPDF parsing)
 - `.doc` format parsing requires Microsoft Word installed locally (via win32com)
 - DeepSeek-R1 response time: ~30–120 seconds (reasoning model is slower but higher quality)
 - `deepseek-reasoner` does not support `response_format: json_object`; output format is enforced via prompt engineering
+- PipeLLM does not support file upload; only Qwen supports `file_upload` mode
 - Recommended browsers: Chrome / Edge
 
 ---

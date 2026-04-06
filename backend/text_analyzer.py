@@ -21,7 +21,7 @@ class TextAnalyzer:
         self.current_structured_data = None
         print("LLM 服务已启用")
     
-    def analyze(self, text, structured_data=None, api_provider='deepseek'):
+    def analyze(self, text, structured_data=None, api_provider='deepseek', api_model=''):
         """
         分析文本，返回完整的分析结果
         两阶段处理：
@@ -31,7 +31,8 @@ class TextAnalyzer:
         Args:
             text: 待分析文本
             structured_data: 结构化数据（包含 PDF 的图片、表格、文件路径等信息）
-            api_provider: API 提供商 ('deepseek' | 'qwen')
+            api_provider: API 提供商 ('deepseek' | 'qwen' | 'pipellm')
+            api_model: 前端指定的具体模型名（覆盖默认模型）
         """
         # 保存结构化数据
         self.current_structured_data = structured_data
@@ -47,16 +48,18 @@ class TextAnalyzer:
         if structured_data and structured_data.get('structured_content'):
             sc = structured_data['structured_content']
             image_items = [x for x in sc if x['type'] == 'image']
-            table_count = len([x for x in sc if x['type'] == 'table'])
+            table_items = [x for x in sc if x['type'] == 'table']
 
-            if image_items:
-                print(f"🖼️ 阶段1：独立分析 {len(image_items)} 张图片...")
-                image_descriptions = self.llm_service.analyze_images(image_items, provider=api_provider)
+            if image_items or table_items:
+                print(f"🖼️ 阶段1：独立分析 {len(image_items)} 张图片 + {len(table_items)} 个表格...")
+                image_descriptions = self.llm_service.analyze_images(
+                    image_items, provider=api_provider, table_infos=table_items
+                )
                 if image_descriptions:
-                    print(f"✅ 图片独立分析完成，结果长度: {len(image_descriptions)} 字")
+                    print(f"✅ 图片+表格独立分析完成，结果长度: {len(image_descriptions)} 字")
 
-            if table_count > 0 or image_items:
-                extra_info = f"\n\n[文档结构信息] 此文档包含 {table_count} 个表格和 {len(image_items)} 张图片。"
+            if len(table_items) > 0 or image_items:
+                extra_info = f"\n\n[文档结构信息] 此文档包含 {len(table_items)} 个表格和 {len(image_items)} 张图片。"
                 text += extra_info
 
         # ── 阶段2：主文本 + 图片分析结果 → 最终分析 ─────────
@@ -66,7 +69,8 @@ class TextAnalyzer:
             provider=api_provider,
             file_path=file_path,
             file_size=file_size,
-            image_descriptions=image_descriptions
+            image_descriptions=image_descriptions,
+            model_override=api_model
         )
 
         if llm_result:
@@ -180,6 +184,7 @@ class TextAnalyzer:
         summary = {
             'core_points': [arg.get('point', '') for arg in llm_result.get('core_arguments', [])],
             'key_data': llm_result.get('key_data', []),  # 结构化关键数据（label/value/context/page）
+            'top_terms': llm_result.get('top_terms', []),  # LLM提取的专业术语词云
             'conclusions': [llm_result.get('summary', '')]
         }
         
@@ -359,11 +364,23 @@ class TextAnalyzer:
         word_count = len(text)
         keypoint_count = len(keypoints)
         keywords = jieba.analyse.extract_tags(text, topK=10)
-        
+
+        # 计算平均重要性
+        importances = [kp.get('importance', 0) for kp in keypoints if kp.get('category') == '核心论点']
+        avg_importance = round(sum(importances) / len(importances), 1) if importances else 0
+
+        # 类别分布
+        category_dist = {}
+        for kp in keypoints:
+            cat = kp.get('category', '其他')
+            category_dist[cat] = category_dist.get(cat, 0) + 1
+
         return {
             'word_count': word_count,
             'keypoint_count': keypoint_count,
-            'top_keywords': keywords
+            'top_keywords': keywords,
+            'avg_importance': avg_importance,
+            'category_distribution': category_dist
         }
     
     def _generate_highlights(self, text, keypoints):
@@ -437,8 +454,11 @@ class TextAnalyzer:
         """
         PyMuPDF 单引擎 PDF 标注（所见即所搜）
 
-        使用 page.search_for() 搜索文本 + page.add_highlight_annot() 添加原生高亮，
-        与解析阶段的 page.get_text() 共享同一文本源，彻底消除文本源断裂。
+        使用 page.search_for() 搜索文本 + page.add_highlight_annot() 添加原生高亮。
+        采用两轮搜索策略：
+          第一轮（精确）：策略 1-6，在 page_hint 附近搜索
+          第二轮（宽松）：策略 7-9，全页遍历搜索
+        避免宽松策略在错误页面误命中。
 
         返回: [{'id': hl_id, 'page': page_num}, ...]
         """
@@ -469,30 +489,40 @@ class TextAnalyzer:
                     int(hex_col[4:6], 16) / 255.0
                 )
 
-                # 确定搜索页面顺序（优先提示页附近 → 其余页面）
+                # ── 搜索页面顺序 ──
+                # 全页顺序搜索，page_hint 仅用于优先级排序
+                all_pages = list(range(n_pages))
                 if page_hint and 1 <= page_hint <= n_pages:
-                    search_pages = [page_hint - 1]
-                    if page_hint > 1:
-                        search_pages.append(page_hint - 2)
-                    if page_hint < n_pages:
-                        search_pages.append(page_hint)
-                    remaining = [i for i in range(n_pages) if i not in search_pages]
-                else:
-                    search_pages = list(range(n_pages))
-                    remaining = []
+                    hint_idx = page_hint - 1
+                    # 按距离 hint 的远近排序
+                    all_pages.sort(key=lambda p: abs(p - hint_idx))
 
                 found = False
-                for page_idx in search_pages + remaining:
-                    found = self._try_highlight_on_page(doc[page_idx], text, color)
+                found_page = None
+
+                # 第一轮：精确策略（1-6），在所有页面上尝试
+                for page_idx in all_pages:
+                    found = self._try_highlight_on_page(doc[page_idx], text, color, strict_only=True)
                     if found:
-                        meta_map.append({'id': hl_id, 'page': page_idx + 1})
-                        located += 1
-                        print(f"  ✅ 第{page_idx + 1}页: {text[:30]}...")
+                        found_page = page_idx
                         break
 
+                # 第二轮：宽松策略（7-9），仅在精确失败时全页遍历
                 if not found:
+                    for page_idx in all_pages:
+                        found = self._try_highlight_on_page(doc[page_idx], text, color, strict_only=False)
+                        if found:
+                            found_page = page_idx
+                            break
+
+                if found and found_page is not None:
+                    meta_map.append({'id': hl_id, 'page': found_page + 1})
+                    located += 1
+                    hint_info = f" (hint={page_hint})" if page_hint else ""
+                    print(f"  ✅ 第{found_page + 1}页{hint_info}: {text[:40]}...")
+                else:
                     meta_map.append({'id': hl_id, 'page': page_hint or 1})
-                    print(f"  ⚠️ 未定位: {text[:30]}...")
+                    print(f"  ⚠️ 未定位 (hint={page_hint}): {text[:40]}...")
 
             doc.save(output_path, garbage=4, deflate=True)
             doc.close()
@@ -535,80 +565,77 @@ class TextAnalyzer:
             return 'chrome'
         return 'generic'
 
-    def _try_highlight_on_page(self, page, text, color):
+    def _try_highlight_on_page(self, page, text, color, strict_only=False):
         """
-        多策略搜索 + 原生高亮标注（10 级递进策略）
+        多策略搜索 + 原生高亮标注
 
-        针对不同 PDF 底层结构的文本差异进行适配：
-        LaTeX PDF: 连字符(ﬁ→fi)、特殊排版符号
-        Word PDF: 智能引号、特殊破折号
-        Markdown PDF: 多余空白、代码块格式差异
-        通用: 零宽字符、跨行文本、空白差异
+        strict_only=True  → 仅执行精确策略（1-6），避免短片段误命中
+        strict_only=False → 仅执行宽松策略（7-9），用于精确全页失败后的降级
         """
-        # ── 策略 1：原始文本直接搜索 ──
-        quads = page.search_for(text, quads=True)
-        if quads:
-            return self._apply_highlight(page, quads, color)
-
-        # 获取页面原始文本用于后续匹配
-        page_text = page.get_text("text")
-
-        # ── 策略 2：全量归一化搜索（NFKC + 去零宽 + 去换行 + 空白归一化）──
         norm_text = self._normalize_for_search(text)
-        if norm_text != text:
-            quads = page.search_for(norm_text, quads=True)
-            if quads:
-                return self._apply_highlight(page, quads, color)
-
-        # ── 策略 3：智能引号/破折号替换（Word PDF 常见）──
-        smart_text = norm_text
-        smart_text = smart_text.replace('\u2018', "'").replace('\u2019', "'")
-        smart_text = smart_text.replace('\u201c', '"').replace('\u201d', '"')
-        smart_text = smart_text.replace('\u2013', '-').replace('\u2014', '-')
-        smart_text = smart_text.replace('\u00a0', ' ')  # non-breaking space
-        if smart_text != norm_text:
-            quads = page.search_for(smart_text, quads=True)
-            if quads:
-                return self._apply_highlight(page, quads, color)
-
-        # ── 策略 4：PyMuPDF 页面文本子串匹配 → 提取精确片段搜索 ──
+        page_text = page.get_text("text")
         norm_page = self._normalize_for_search(page_text)
         norm_query = self._normalize_for_search(text)
-        if norm_query in norm_page:
-            # 在归一化页面文本中找到了，用逐步截短的方式在原始PDF中搜索
-            for seg_len in [len(norm_query), 80, 50, 30, 20]:
-                if seg_len > len(norm_query):
-                    continue
-                snippet = norm_query[:seg_len]
-                quads = page.search_for(snippet, quads=True)
-                if quads:
-                    return self._apply_highlight(page, quads, color)
 
-        # ── 策略 5：中文标点变体（全角↔半角）──
-        punct_map = str.maketrans('，。！？；：（）', ',.!?;:()')
-        punct_text = norm_text.translate(punct_map)
-        if punct_text != norm_text:
-            quads = page.search_for(punct_text, quads=True)
+        if strict_only:
+            # ── 策略 1：原始文本直接搜索 ──
+            quads = page.search_for(text, quads=True)
             if quads:
                 return self._apply_highlight(page, quads, color)
 
-        # ── 策略 6：Docling 与 PyMuPDF 文本差异对齐 ──
-        # Docling 提取的文本可能有额外空格（如中英文间），而 PyMuPDF 没有
-        # 尝试去除所有空格后搜索
-        no_space = re.sub(r'\s', '', norm_query)
-        page_no_space = re.sub(r'\s', '', page_text)
-        if len(no_space) >= 10 and no_space in page_no_space:
-            # 找到无空格匹配，用前若干字搜索
-            for seg_len in [25, 18, 12, 8]:
-                if seg_len > len(norm_query):
-                    continue
-                snippet = norm_query[:seg_len]
-                quads = page.search_for(snippet, quads=True)
+            # ── 策略 2：全量归一化搜索 ──
+            if norm_text != text:
+                quads = page.search_for(norm_text, quads=True)
                 if quads:
                     return self._apply_highlight(page, quads, color)
 
-        # ── 策略 7：逐级截短搜索（前段 + 后段 + 中段）──
-        for length in [80, 60, 40, 25, 15]:
+            # ── 策略 3：智能引号/破折号替换 ──
+            smart_text = norm_text
+            smart_text = smart_text.replace('\u2018', "'").replace('\u2019', "'")
+            smart_text = smart_text.replace('\u201c', '"').replace('\u201d', '"')
+            smart_text = smart_text.replace('\u2013', '-').replace('\u2014', '-')
+            smart_text = smart_text.replace('\u00a0', ' ')
+            if smart_text != norm_text:
+                quads = page.search_for(smart_text, quads=True)
+                if quads:
+                    return self._apply_highlight(page, quads, color)
+
+            # ── 策略 4：归一化子串匹配 → 截短搜索 ──
+            if norm_query in norm_page:
+                for seg_len in [len(norm_query), 80, 50, 30, 20]:
+                    if seg_len > len(norm_query):
+                        continue
+                    snippet = norm_query[:seg_len]
+                    quads = page.search_for(snippet, quads=True)
+                    if quads:
+                        return self._apply_highlight(page, quads, color)
+
+            # ── 策略 5：中文标点变体 ──
+            punct_map = str.maketrans('，。！？；：（）', ',.!?;:()')
+            punct_text = norm_text.translate(punct_map)
+            if punct_text != norm_text:
+                quads = page.search_for(punct_text, quads=True)
+                if quads:
+                    return self._apply_highlight(page, quads, color)
+
+            # ── 策略 6：去空格对齐 ──
+            no_space = re.sub(r'\s', '', norm_query)
+            page_no_space = re.sub(r'\s', '', page_text)
+            if len(no_space) >= 10 and no_space in page_no_space:
+                for seg_len in [25, 18, 12, 8]:
+                    if seg_len > len(norm_query):
+                        continue
+                    snippet = norm_query[:seg_len]
+                    quads = page.search_for(snippet, quads=True)
+                    if quads:
+                        return self._apply_highlight(page, quads, color)
+
+            return False
+
+        # ── 以下为宽松策略（strict_only=False 时执行）──
+
+        # ── 策略 7：逐级截短搜索（提高最小长度阈值避免误命中）──
+        for length in [80, 60, 40, 30]:
             if len(norm_text) <= length:
                 continue
             # 前段
@@ -619,25 +646,18 @@ class TextAnalyzer:
             quads = page.search_for(norm_text[-length:], quads=True)
             if quads:
                 return self._apply_highlight(page, quads, color)
-            # 中段
-            mid = len(norm_text) // 2
-            mid_start = max(0, mid - length // 2)
-            quads = page.search_for(norm_text[mid_start:mid_start + length], quads=True)
-            if quads:
-                return self._apply_highlight(page, quads, color)
 
-        # ── 策略 8：关键词锚定搜索（提取长词在页面中定位）──
-        keywords = [w for w in jieba.cut(text) if len(w) >= 4]
+        # ── 策略 8：关键词锚定（仅用 >=6 字的长词，减少误命中）──
+        keywords = [w for w in jieba.cut(text) if len(w) >= 6]
         if keywords:
-            # 用最长的关键词尝试定位
             keywords.sort(key=len, reverse=True)
-            for kw in keywords[:3]:
+            for kw in keywords[:2]:
                 quads = page.search_for(kw, quads=True)
                 if quads:
                     return self._apply_highlight(page, quads, color)
 
-        # ── 策略 9：滑动窗口搜索（在页面文本中寻找最佳匹配子串）──
-        if len(norm_query) >= 15:
+        # ── 策略 9：滑动窗口（提高相似度阈值到 0.8）──
+        if len(norm_query) >= 20:
             best_ratio = 0
             best_substr = None
             window_size = min(len(norm_query) + 20, len(norm_page))
@@ -648,9 +668,8 @@ class TextAnalyzer:
                 if ratio > best_ratio:
                     best_ratio = ratio
                     best_substr = window
-            if best_ratio > 0.7 and best_substr:
-                # 找到高相似度窗口，用前20字在原始PDF中搜索
-                for seg_len in [25, 18, 12]:
+            if best_ratio > 0.8 and best_substr:
+                for seg_len in [30, 20]:
                     snippet = best_substr[:seg_len]
                     quads = page.search_for(snippet, quads=True)
                     if quads:

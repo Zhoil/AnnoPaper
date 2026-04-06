@@ -157,11 +157,12 @@ def upload_file():
         _save_parsed_output(unique_filename, text_content, structured_content, metadata)
 
         api_provider = request.form.get('api_provider', 'deepseek')
+        api_model = request.form.get('api_model', '')
         analysis_result = analyzer.analyze(text_content, structured_data={
             'filepath': filepath,
             'structured_content': structured_content,
             'metadata': metadata
-        }, api_provider=api_provider)
+        }, api_provider=api_provider, api_model=api_model)
         
         # 如果是 PDF，生成带标注的副本
         annotated_url = None
@@ -242,10 +243,11 @@ def upload_url():
         
         # 分析文本（传入结构化信息和 API 提供商）
         api_provider = data.get('api_provider', 'deepseek')
+        api_model = data.get('api_model', '')
         analysis_result = analyzer.analyze(text_content, structured_data={
             'structured_content': structured_content,
             'metadata': metadata
-        }, api_provider=api_provider)
+        }, api_provider=api_provider, api_model=api_model)
         
         # 如果有HTML，生成标注版网页
         annotated_html = None
@@ -420,6 +422,16 @@ def chat():
     except Exception as e:
         print(f"Chat 错误: {str(e)}")
         return jsonify({'error': f'对话失败: {str(e)}'}), 500
+
+@app.route('/api/providers', methods=['GET'])
+def get_providers():
+    """返回所有可用 provider 及其模型列表（供前端动态渲染）"""
+    try:
+        providers = analyzer.llm_service.get_available_providers()
+        return jsonify({'success': True, 'providers': providers})
+    except Exception as e:
+        return jsonify({'error': f'获取 provider 列表失败: {str(e)}'}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

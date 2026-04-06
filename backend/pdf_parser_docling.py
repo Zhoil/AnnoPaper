@@ -27,7 +27,7 @@ class DoclingPDFParser:
         self.converter = None  # 延迟初始化
 
     def _init_converter(self):
-        """延迟初始化 Docling 转换器（首次解析时才加载模型）"""
+        """延迟初始化 Docling 转换器（首次解析时才加载模型，禁用 OCR 降低内存占用）"""
         if self.converter is not None:
             return
 
@@ -35,9 +35,20 @@ class DoclingPDFParser:
         from docling.document_converter import DocumentConverter
 
         print("🔄 Docling 首次初始化，模型将下载到 .hf_cache/...")
-        self.converter = DocumentConverter(
-            allowed_formats=[InputFormat.PDF]
-        )
+        try:
+            # 尝试禁用 OCR 以减少内存占用
+            from docling.datamodel.pipeline_options import PdfPipelineOptions
+            pipeline_options = PdfPipelineOptions(do_ocr=False)
+            from docling.document_converter import PdfFormatOption
+            self.converter = DocumentConverter(
+                allowed_formats=[InputFormat.PDF],
+                format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+            )
+        except Exception as e:
+            print(f"⚠️ Docling OCR 禁用配置失败，使用默认配置: {e}")
+            self.converter = DocumentConverter(
+                allowed_formats=[InputFormat.PDF]
+            )
         print("✅ Docling PDF 解析器初始化完成（模型缓存: .hf_cache）")
 
     def parse_pdf(self, filepath: str) -> Optional[Dict[str, Any]]:
@@ -53,6 +64,13 @@ class DoclingPDFParser:
 
         try:
             print(f"📄 Docling 解析: {os.path.basename(filepath)}")
+
+            # 内存保护：大文件直接降级到 PyMuPDF
+            file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
+            if file_size_mb > 50:
+                print(f"⚠️ 文件过大 ({file_size_mb:.1f}MB > 50MB)，跳过 Docling，降级使用 PyMuPDF")
+                return self._fallback_pymupdf_parse(filepath)
+
             self._init_converter()
 
             # 执行转换
@@ -79,11 +97,26 @@ class DoclingPDFParser:
             # ── 方式一：使用 export_to_markdown() 获取完整文本（兜底）──
             full_md = document.export_to_markdown()
 
-            # ── 方式二：按页分段文本（LLM 分析用，合并碎片 + 过滤噪声）──
+            # ── 方式二：按页分段文本（LLM 分析用，合并碎片 + 过滤噪声 + 过滤非正文）──
             page_texts = {}  # page_no -> [text_parts]
+            skip_until_next_section = False  # 是否处于非正文章节中
             for item, _level in document.iterate_items():
                 page_no = self._get_page_no(item)
                 text = getattr(item, 'text', '')
+                item_type = type(item).__name__
+
+                # 检测章节标题，判断是否进入非正文区域
+                if 'Header' in item_type or 'SectionHeader' in item_type:
+                    if text and self._is_non_body_section(text.strip()):
+                        skip_until_next_section = True
+                        print(f"  ⏩ 跳过非正文章节: '{text.strip()[:50]}'")
+                        continue
+                    else:
+                        skip_until_next_section = False
+
+                if skip_until_next_section:
+                    continue
+
                 if text and text.strip():
                     clean = text.strip()
                     # 过滤噪声：纯页码、极短无意义碎片
@@ -171,11 +204,16 @@ class DoclingPDFParser:
                   f"{text_count} 文本块, {table_count} 表格, {pic_count} 图片")
             return result
 
+        except (MemoryError, RuntimeError) as e:
+            print(f"❌ Docling 内存/运行时错误，降级使用 PyMuPDF: {str(e)}")
+            return self._fallback_pymupdf_parse(filepath)
         except Exception as e:
             print(f"❌ Docling 解析失败: {str(e)}")
             import traceback
             traceback.print_exc()
-            return None
+            # 降级使用 PyMuPDF
+            print("🔄 尝试降级使用 PyMuPDF 解析...")
+            return self._fallback_pymupdf_parse(filepath)
 
     # ── 工具方法 ──
 
@@ -199,6 +237,29 @@ class DoclingPDFParser:
                     'y1': float(bb.b),
                 }
         return {'x0': 0, 'y0': 0, 'x1': 0, 'y1': 0}
+
+    def _is_non_body_section(self, heading: str) -> bool:
+        """
+        判断标题是否属于非正文章节（参考文献、附录、致谢、作者简介等）
+        """
+        h = heading.lower().strip()
+        # 去掉开头的编号（如 "7. References" → "references"）
+        h_clean = re.sub(r'^[\d.\s]+', '', h).strip()
+        non_body_patterns = [
+            r'^references?$', r'^bibliography$', r'^\u53c2\u8003\u6587\u732e',
+            r'^appendix', r'^\u9644\u5f55',
+            r'^acknowledge?ments?$', r'^\u81f4\u8c22',
+            r'^author', r'^\u4f5c\u8005\u7b80\u4ecb', r'^\u4f5c\u8005\u4fe1\u606f',
+            r'^biograph', r'^about the author',
+            r'^conflict.{0,5}interest', r'^funding', r'^\u57fa\u91d1',
+            r'^supplementary', r'^\u8865\u5145\u6750\u6599',
+            r'^declarations?$', r'^ethics',
+            r'^data availability',
+        ]
+        for pat in non_body_patterns:
+            if re.match(pat, h_clean, re.IGNORECASE):
+                return True
+        return False
 
     def _is_noise(self, text: str, page_no: int = 0, total_pages: int = 0) -> bool:
         """
@@ -234,8 +295,19 @@ class DoclingPDFParser:
             if re.match(pat, t_lower):
                 return True
         # 仅包含数字+标点（如 "17716"）
-        if re.match(r'^[\d\s,.;:\-–—]+$', t):
+        if re.match(r'^[\d\s,.;:\-\u2013\u2014]+$', t):
             return True
+        # 作者/机构信息模式
+        author_patterns = [
+            r'[\w.+-]+@[\w-]+\.[\w.]+',           # 邮箱地址
+            r'\buniversity\b', r'\binstitute\b',    # 机构名
+            r'^received:.*accepted:', r'^published:',  # 期刊元数据
+        ]
+        for pat in author_patterns:
+            if re.search(pat, t_lower):
+                # 仅当文本较短时才过滤（避免误伤正文中提及大学的句子）
+                if len(t) < 120:
+                    return True
         return False
 
     def _merge_text_blocks(self, blocks: List[str]) -> List[str]:
@@ -396,3 +468,57 @@ class DoclingPDFParser:
                     }
 
         return None
+
+    def _fallback_pymupdf_parse(self, filepath: str) -> Optional[Dict[str, Any]]:
+        """
+        PyMuPDF 降级解析：当 Docling 失败/内存不足时，用 PyMuPDF 直接提取文本
+        """
+        try:
+            import fitz
+            doc = fitz.open(filepath)
+            num_pages = len(doc)
+            print(f"🔄 PyMuPDF 降级解析: {os.path.basename(filepath)} ({num_pages} 页)")
+
+            page_texts = {}
+            structured_content = []
+
+            for page_idx in range(num_pages):
+                page = doc[page_idx]
+                page_no = page_idx + 1
+                text = page.get_text('text')
+                if text and text.strip():
+                    clean = text.strip()
+                    lines = [l for l in clean.split('\n') if l.strip() and not self._is_noise(l.strip(), page_no, num_pages)]
+                    if lines:
+                        page_texts[page_no] = lines
+                        structured_content.append({
+                            'type': 'text',
+                            'content': '\n'.join(lines),
+                            'page': page_no,
+                            'bbox': {'x0': 0, 'y0': 0, 'x1': 0, 'y1': 0},
+                            'subtype': 'TextItem',
+                        })
+
+            all_text_parts = []
+            for pg in sorted(page_texts.keys()):
+                all_text_parts.append(f"\n\n===== 第 {pg} 页 =====\n\n")
+                all_text_parts.append('\n'.join(page_texts[pg]))
+
+            doc.close()
+
+            result = {
+                'text': ''.join(all_text_parts),
+                'structured_content': structured_content,
+                'metadata': {
+                    'page_count': num_pages,
+                    'title': os.path.basename(filepath),
+                    'author': '',
+                    'parser': 'pymupdf_fallback',
+                }
+            }
+            print(f"✅ PyMuPDF 降级解析完成: {num_pages} 页, {len(structured_content)} 文本块")
+            return result
+
+        except Exception as e:
+            print(f"❌ PyMuPDF 降级解析也失败: {str(e)}")
+            return None

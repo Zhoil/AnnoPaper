@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import requests
 from typing import Dict, List, Optional
@@ -18,7 +19,7 @@ class LLMService:
     """
 
     # ── 已注册的 provider 名称列表（所有配置从 .env 读取）──
-    PROVIDERS = ['deepseek', 'qwen']
+    PROVIDERS = ['deepseek', 'qwen', 'pipellm']
 
     def __init__(self):
         self.chat_provider = os.environ.get('CHAT_PROVIDER', 'deepseek')
@@ -37,16 +38,37 @@ class LLMService:
     def _get_provider_config(self, provider: str) -> dict:
         """获取指定 provider 的完整配置（全部从环境变量读取，零硬编码）"""
         prefix = provider.upper()
+        # 解析可用模型列表（逗号分隔）
+        models_str = os.environ.get(f'{prefix}_MODELS', '')
+        models = [m.strip() for m in models_str.split(',') if m.strip()] if models_str else []
         return {
             'provider': provider,
             'api_key': os.environ.get(f'{prefix}_API_KEY', ''),
             'api_url': os.environ.get(f'{prefix}_API_URL', ''),
             'model': os.environ.get(f'{prefix}_MODEL', ''),
+            'models': models,
             'file_model': os.environ.get(f'{prefix}_FILE_MODEL', ''),
             'timeout': int(os.environ.get(f'{prefix}_TIMEOUT', '60')),
             'display_name': os.environ.get(f'{prefix}_DISPLAY_NAME', provider),
             'supports_json_format': os.environ.get(f'{prefix}_SUPPORTS_JSON', '').lower() == 'true',
+            'supports_file_upload': os.environ.get(f'{prefix}_SUPPORTS_FILE_UPLOAD', '').lower() == 'true',
         }
+
+    def get_available_providers(self) -> List[Dict]:
+        """返回所有可用 provider 及其模型列表（供前端查询）"""
+        result = []
+        for name in self.PROVIDERS:
+            cfg = self._get_provider_config(name)
+            if not cfg['api_key']:
+                continue
+            provider_info = {
+                'id': name,
+                'name': cfg['display_name'],
+                'default_model': cfg['model'],
+                'models': cfg['models'] if cfg['models'] else [cfg['model']],
+            }
+            result.append(provider_info)
+        return result
 
     def is_enabled(self) -> bool:
         return True
@@ -125,8 +147,19 @@ class LLMService:
     {{
       "label": "数据指标名称（如“准确率”、“F1-Score”、“市场规模”）",
       "value": "具体数值或百分比（如“94.5%”、“1.2万亿”）",
+      "numeric": 94.5,
+      "unit": "%",
+      "type": "percentage",
       "context": "数据的上下文说明（如“在MMLU基准测试中”）",
-      "page": 5
+      "page": 5,
+      "is_comparison": true
+    }}
+  ],
+  "top_terms": [
+    {{
+      "term": "专业术语或主题词",
+      "weight": 95,
+      "category": "所属领域（如“核心技术”、“方法论”、“研究对象”）"
     }}
   ],
   "summary": "一句话概括全文核心",
@@ -135,12 +168,32 @@ class LLMService:
 </output_format>
 
 <key_data_rules>
-提取文档中所有有意义的定量数据、指标、统计结果：
-- 实验数据：准确率、召回率、F1-Score、BLEU、ROUGE 等
-- 统计数据：百分比、增长率、规模、数量
-- 对比数据：提升/降低幅度、before/after
-- 如果文档无定量数据，key_data 返回空数组 []
+提取文档中真正重要的定量数据，严格筛选：
+- ✅ 保留：核心实验结果、关键性能指标、重要对比数据（before/after、方法A vs 方法B）、核心统计结论
+- ❌ 不保留：背景数据、泡沋数字、无对比意义的单一数值、文献编号、年份、样本量等常见辅助信息
+- 数量控制：最多 6 个，宁缺勿滥，无重要数据则返回空数组 []
+
+每个 key_data 项必须包含：
+- "numeric": 纯数字值（去掉单位和符号，如 94.5、120、3.5），若无法提取数字则为 null
+- "unit": 单位（如 "%"、"万亿"、"ms"、"个"），若无单位则为 ""
+- "type": "percentage" | "comparison" | "number"
+- "is_comparison": 布尔值，是否为有意义的对比数据（如 A vs B、提升幅度、前后对比）
+- "value": 数值字符串必须连贯，不得有多余空格（正确: "0.1"、"94.5%"；错误: "0 . 1"、"94 . 5 %"）
 </key_data_rules>
+
+<top_terms_rules>
+提取文档中 8-15 个最重要的专业术语和主题词：
+- 必须是文档的核心专业词汇，而非通用词（如"研究"、"方法"、"结果"这类不算）
+- 严格排除以下内容：
+  - 人名、作者姓名（如 "Zhang"、"Wang" 等）
+  - 引用标记（如 "et"、"al"、"et al"）
+  - 机构名称（如大学、研究所名称）
+  - 英文连接词/介词/冠词（如 "and"、"so"、"the"、"of"、"in"、"for"、"with"、"that" 等）
+  - 中文虚词（如"的"、"了"、"在"、"对"等）
+- weight 范围 1-100，按在文档中的重要性和出现频率综合评分
+- category: "核心技术" | "方法论" | "研究对象" | "评价指标" | "应用领域" | "其他"
+- 排序：按 weight 从高到低
+</top_terms_rules>
 
 <scoring>
 - 95-100：核心创新观点、颠覆性结论、独家数据
@@ -153,7 +206,8 @@ class LLMService:
 
     def analyze_text(self, text: str, provider: str = 'deepseek',
                      file_path: Optional[str] = None, file_size: int = 0,
-                     image_descriptions: str = '') -> Optional[Dict]:
+                     image_descriptions: str = '',
+                     model_override: str = '') -> Optional[Dict]:
         """
         使用指定 API 提供商分析文档
 
@@ -161,18 +215,23 @@ class LLMService:
 
         Args:
             text: 已提取的文本内容（用于降级 + 标注搜索）
-            provider: API 提供商 ('deepseek' | 'qwen')
+            provider: API 提供商 ('deepseek' | 'qwen' | 'pipellm')
             file_path: 原始文件路径（PDF/Word/Markdown 等）
             file_size: 文件大小（字节）
             image_descriptions: 图片独立分析结果（两阶段第一阶段输出）
+            model_override: 前端指定的具体模型名（覆盖默认模型）
         """
         config = self._get_provider_config(provider)
+        # 如果前端指定了具体模型，覆盖默认模型
+        if model_override:
+            config['model'] = model_override
+            print(f"🎯 使用前端指定模型: {model_override}")
         system_prompt = self._build_system_prompt(provider)
 
         try:
             # ── 优先方案：文件直传 API ──────────────────────────
-            # 上传原始文件 → API 自行解析 → 返回分析结果
-            if file_path and os.path.exists(file_path):
+            # 仅当 provider 明确支持文件上传时才尝试
+            if file_path and os.path.exists(file_path) and config.get('supports_file_upload'):
                 file_id = self._upload_file(file_path, config)
                 if file_id:
                     file_name = os.path.basename(file_path)
@@ -196,22 +255,36 @@ class LLMService:
                     print("⚠️ 文件直传分析失败，降级为文本提取模式")
 
             # ── 降级方案：文本提取模式 ────────────────────────
-            final_content = text
+            file_name = os.path.basename(file_path) if file_path else ''
+            text_len = len(text)
 
+            # 判断是否需要多轮分块分析
+            if text_len > self.LONG_TEXT_THRESHOLD:
+                print(f"📄 长文档检测：{text_len} 字符 > {self.LONG_TEXT_THRESHOLD} 阈值，启动 Map-Reduce 多轮分析")
+                result = self._analyze_long_text(
+                    text, config, system_prompt,
+                    file_name=file_name,
+                    image_descriptions=image_descriptions
+                )
+                if result:
+                    return result
+                print("⚠️ Map-Reduce 分析失败，回退到单次截断分析")
+
+            # 短文档 或 Map-Reduce 失败的回退：单次调用
+            final_content = text
             if image_descriptions:
                 final_content += f"\n\n{'='*50}\n【图片分析结果】\n以下是文档中图片经独立分析后得到的描述，请结合这些图片信息进行整体分析：\n{image_descriptions}\n{'='*50}"
 
             if file_path and file_path.lower().endswith('.pdf'):
-                file_name = os.path.basename(file_path)
                 formatted_content = f"""[file name]: {file_name}
 [file content begin]
 {final_content}
 [file content end]
 请对这份PDF文档进行穿透式分析，提取核心论点和证据，并记录页码信息。"""
-                print(f"📄 文本提取模式：{config['display_name']}（{config['model']}）处理 {file_name}")
+                print(f"📄 文本提取模式：{config['display_name']}（{config['model']}）处理 {file_name} ({text_len} 字符)")
             else:
-                formatted_content = final_content
-                print(f"📝 文本提取模式：{config['display_name']}（{config['model']}）分析文本")
+                formatted_content = f"请对以下文章进行穿透式分析：\n\n{final_content}"
+                print(f"📝 文本提取模式：{config['display_name']}（{config['model']}）分析文本 ({text_len} 字符)")
 
             response = self._call_api(formatted_content, system_prompt, config)
 
@@ -400,8 +473,196 @@ class LLMService:
         except Exception:
             pass  # 清理失败不影响主流程
 
+    # ── 长文档 Map-Reduce 多轮分析 ──────────────────────────
+
+    # 单次 API 调用的字符上限（留 ~2000 给 prompt 和格式包装）
+    CHUNK_CHAR_LIMIT = 10000
+    # 超过此长度触发分块分析
+    LONG_TEXT_THRESHOLD = 12000
+
+    def _split_text_chunks(self, text: str) -> List[str]:
+        """
+        按页码标记（===== 第 N 页 =====）将长文本智能分块。
+        每块不超过 CHUNK_CHAR_LIMIT，优先在页边界处分割。
+        """
+        page_pattern = re.compile(r'(===== 第 \d+ 页 =====)')
+        segments = page_pattern.split(text)
+
+        # 重新组装为 [(页标记, 页内容), ...]
+        pages = []
+        i = 0
+        while i < len(segments):
+            seg = segments[i].strip()
+            if page_pattern.match(seg):
+                content = segments[i + 1] if i + 1 < len(segments) else ''
+                pages.append(f"{seg}\n{content.strip()}")
+                i += 2
+            else:
+                if seg:
+                    pages.append(seg)
+                i += 1
+
+        if not pages:
+            return [text]
+
+        # 贪心合并：尽量让每块接近 CHUNK_CHAR_LIMIT
+        chunks = []
+        current_chunk = []
+        current_len = 0
+
+        for page in pages:
+            page_len = len(page)
+            if current_len + page_len > self.CHUNK_CHAR_LIMIT and current_chunk:
+                chunks.append('\n\n'.join(current_chunk))
+                current_chunk = [page]
+                current_len = page_len
+            else:
+                current_chunk.append(page)
+                current_len += page_len
+
+        if current_chunk:
+            chunks.append('\n\n'.join(current_chunk))
+
+        return chunks
+
+    def _build_chunk_prompt(self, chunk_text: str, chunk_idx: int,
+                            total_chunks: int, file_name: str = '') -> str:
+        """构建单个分块的分析提示词"""
+        return f"""你正在分析一篇文档的第 {chunk_idx}/{total_chunks} 部分。
+{'文档: ' + file_name if file_name else ''}
+
+请从这部分内容中提取核心论点和证据。注意：
+1. 只提取**本部分**中出现的内容，逐字引用原文
+2. **页码必须使用文本中的 '===== 第 N 页 =====' 标记中的页码 N**，这是文档的实际页码
+3. 如果本部分无核心论点（如仅为参考文献、附录），返回空的 core_arguments 数组
+
+[内容开始]
+{chunk_text}
+[内容结束]"""
+
+    def _build_merge_prompt(self, chunk_results: List[Dict], total_text_len: int) -> str:
+        """构建合并多轮结果的提示词"""
+        # 汇总所有分块的 core_arguments
+        all_arguments = []
+        all_key_data = []
+        summaries = []
+        titles = []
+
+        for i, result in enumerate(chunk_results):
+            for arg in result.get('core_arguments', []):
+                arg['_from_chunk'] = i + 1
+                all_arguments.append(arg)
+            all_key_data.extend(result.get('key_data', []))
+            if result.get('summary'):
+                summaries.append(result['summary'])
+            if result.get('title'):
+                titles.append(result['title'])
+
+        # 序列化各分块提取的论点
+        args_text = json.dumps(all_arguments, ensure_ascii=False, indent=2)
+        key_data_text = json.dumps(all_key_data, ensure_ascii=False, indent=2)
+
+        return f"""以下是对一篇完整文档分块分析后提取的所有论点和数据。
+文档总长度约 {total_text_len} 字符，共分 {len(chunk_results)} 块分析。
+
+【各分块提取的论点】
+{args_text}
+
+【各分块提取的关键数据】
+{key_data_text}
+
+【各分块摘要】
+{'\n'.join(f'分块{i+1}: {s}' for i, s in enumerate(summaries))}
+
+请执行以下操作：
+1. **去重合并**：合并语义重复的论点，保留原文引用最完整、页码最准确的版本
+2. **全局排序**：按重要性重新评分（95-100 核心创新，80-94 强论证，60-79 辅助推导，<60 过滤）
+3. **筛选精华**：根据文档长度保留 2-8 个最核心论点
+4. **合并关键数据**：去重并保留所有有意义的定量数据
+5. **生成全局摘要**：一句话概括全文核心
+6. **生成标题**：反映文章主旨
+
+严格按照规定的 JSON 格式输出（core_arguments / key_data / summary / title）。"""
+
+    def _analyze_long_text(self, text: str, config: dict, system_prompt: str,
+                           file_name: str = '', image_descriptions: str = '') -> Optional[Dict]:
+        """
+        Map-Reduce 长文档分析：
+        Map   → 分块独立提取论点
+        Reduce → 合并去重，生成最终结果
+        """
+        chunks = self._split_text_chunks(text)
+        total_chunks = len(chunks)
+        print(f"📑 长文档分块分析：共 {len(text)} 字符，分为 {total_chunks} 块")
+
+        # ── Map 阶段：逐块分析 ──
+        chunk_results = []
+        for i, chunk in enumerate(chunks):
+            chunk_idx = i + 1
+            print(f"  🔍 分析第 {chunk_idx}/{total_chunks} 块 ({len(chunk)} 字符)...")
+
+            user_content = self._build_chunk_prompt(chunk, chunk_idx, total_chunks, file_name)
+            response = self._call_api(user_content, system_prompt, config)
+
+            if response:
+                result = self._parse_llm_response(response)
+                if result:
+                    args_count = len(result.get('core_arguments', []))
+                    print(f"  ✅ 第 {chunk_idx} 块完成，提取 {args_count} 个论点")
+                    chunk_results.append(result)
+                else:
+                    print(f"  ⚠️ 第 {chunk_idx} 块解析失败，跳过")
+            else:
+                print(f"  ⚠️ 第 {chunk_idx} 块 API 调用失败，跳过")
+
+        if not chunk_results:
+            print("❌ 所有分块分析均失败")
+            return None
+
+        # 如果只有一块成功，直接返回（无需合并）
+        if len(chunk_results) == 1:
+            return chunk_results[0]
+
+        # ── Reduce 阶段：合并多块结果 ──
+        total_args = sum(len(r.get('core_arguments', [])) for r in chunk_results)
+        print(f"🔗 合并阶段：{len(chunk_results)} 块共提取 {total_args} 个论点，开始去重合并...")
+
+        # 追加图片分析结果到合并 prompt
+        merge_content = self._build_merge_prompt(chunk_results, len(text))
+        if image_descriptions:
+            merge_content += f"\n\n【图片分析结果】\n{image_descriptions}"
+
+        merge_response = self._call_api(merge_content, system_prompt, config)
+        if merge_response:
+            final_result = self._parse_llm_response(merge_response)
+            if final_result:
+                final_count = len(final_result.get('core_arguments', []))
+                print(f"✅ 合并完成：最终保留 {final_count} 个核心论点")
+                return final_result
+
+        # 合并失败时，回退：直接拼接所有分块结果
+        print("⚠️ 合并调用失败，使用直接拼接回退策略")
+        return self._fallback_merge(chunk_results)
+
+    def _fallback_merge(self, chunk_results: List[Dict]) -> Dict:
+        """合并调用失败时的回退策略：直接拼接并按 importance 排序截取"""
+        all_args = []
+        all_key_data = []
+        for r in chunk_results:
+            all_args.extend(r.get('core_arguments', []))
+            all_key_data.extend(r.get('key_data', []))
+
+        # 按 importance 降序排序，保留 top 8
+        all_args.sort(key=lambda x: x.get('importance', 0), reverse=True)
+        return {
+            'core_arguments': all_args[:8],
+            'key_data': all_key_data,
+            'summary': chunk_results[0].get('summary', ''),
+            'title': chunk_results[0].get('title', '')
+        }
+
     def _call_api(self, user_content: str, system_prompt: str, config: dict) -> Optional[str]:
-        """调用指定配置的 API"""
+        """调用指定配置的 API（不再硬截断，由上层控制内容长度）"""
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {config["api_key"]}'
@@ -410,7 +671,7 @@ class LLMService:
             'model': config['model'],
             'messages': [
                 {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': f"请对以下文章进行穿透式分析：\n\n{user_content[:12000]}"}
+                {'role': 'user', 'content': user_content}
             ],
             'temperature': 1.0
         }
@@ -474,46 +735,76 @@ class LLMService:
             print(f"原始响应内容: {response}")
             return None
 
-    def analyze_images(self, image_infos: list, provider: str = 'deepseek') -> str:
+    def analyze_images(self, image_infos: list, provider: str = 'deepseek',
+                       table_infos: list = None) -> str:
         """
-        独立分析文档中的图片信息（两阶段处理的第一阶段）
+        独立分析文档中的图片和表格信息（两阶段处理的第一阶段）
         Args:
             image_infos: 图片信息列表 [{'page': int, 'content': str, 'metadata': dict}, ...]
             provider: API 提供商
+            table_infos: 表格信息列表 [{'page': int, 'content': str, 'table_data': list}, ...]
         Returns:
-            图片分析描述文本
+            图片+表格分析描述文本
         """
-        if not image_infos:
+        if not image_infos and not table_infos:
             return ''
 
+        table_infos = table_infos or []
         config = self._get_provider_config(provider)
 
-        # 构建图片分析提示
-        image_prompt = "你是一个专业的文档图片分析专家。以下是从文档中提取的图片信息（包括格式、尺寸和在文档中的位置上下文）。\n"
-        image_prompt += "请对每张图片进行分析，推断其可能的内容和作用，并说明其与文档主题的关系。\n\n"
+        # 构建多媒体分析提示
+        media_prompt = "你是一个专业的文档多媒体分析专家。以下是从文档中提取的图片和表格信息。\n"
+        media_prompt += "请对每个元素进行分析，提取其中的关键数据、结论和见解。\n\n"
 
-        for idx, img in enumerate(image_infos):
+        # 图片部分
+        for idx, img in enumerate(image_infos or []):
             page = img.get('page', '未知')
-            content = img.get('content', '')
             metadata = img.get('metadata', {})
             context = img.get('surrounding_text', '')
 
-            image_prompt += f"--- 图片 {idx + 1}（第 {page} 页）---\n"
-            image_prompt += f"格式: {metadata.get('format', '未知').upper()}, 尺寸: {metadata.get('width', 0)}x{metadata.get('height', 0)}\n"
+            media_prompt += f"--- 图片 {idx + 1}（第 {page} 页）---\n"
+            media_prompt += f"格式: {metadata.get('format', '未知').upper()}, 尺寸: {metadata.get('width', 0)}x{metadata.get('height', 0)}\n"
             if context:
-                image_prompt += f"图片周围的文本上下文:\n{context}\n"
-            image_prompt += "\n"
+                media_prompt += f"图片周围的文本上下文:\n{context}\n"
+            media_prompt += "\n"
 
-        image_prompt += "请为每张图片提供：\n1. 推断的图片内容描述\n2. 图片在文档论证中的作用\n3. 关键数据或信息（如果可以推断）\n"
-        image_prompt += "请用简洁的中文回答。"
+        # 表格部分
+        for idx, tbl in enumerate(table_infos):
+            page = tbl.get('page', '未知')
+            content = tbl.get('content', '')
+            table_data = tbl.get('table_data', [])
+
+            media_prompt += f"--- 表格 {idx + 1}（第 {page} 页）---\n"
+            if table_data:
+                # 展示表格结构化数据
+                for row_idx, row in enumerate(table_data[:20]):  # 最多取 20 行
+                    media_prompt += " | ".join(str(cell) for cell in row) + "\n"
+                if len(table_data) > 20:
+                    media_prompt += f"... (还有 {len(table_data) - 20} 行)\n"
+            elif content:
+                media_prompt += content[:500] + "\n"
+            media_prompt += "\n"
+
+        img_count = len(image_infos or [])
+        tbl_count = len(table_infos)
+        media_prompt += f"请为以上 {img_count} 张图片和 {tbl_count} 个表格提供：\n"
+        media_prompt += "1. 推断的内容描述和关键发现\n"
+        media_prompt += "2. 其中包含的关键数据指标（如有）\n"
+        media_prompt += "3. 在文档论证中的作用\n"
+        media_prompt += "请用简洁的中文回答，重点突出可量化的数据和结论。"
 
         try:
-            print(f"🖼️ 使用 {config['display_name']} 独立分析 {len(image_infos)} 张图片...")
-            result = self._call_api(image_prompt, "你是专业的文档图片分析专家，擅长根据图片的元数据和上下文推断图片内容。", config)
+            total = img_count + tbl_count
+            print(f"🖼️ 使用 {config['display_name']} 独立分析 {img_count} 张图片 + {tbl_count} 个表格...")
+            result = self._call_api(
+                media_prompt,
+                "你是专业的文档多媒体分析专家，擅长从图片元数据、表格数据和上下文中提取关键数据和见解。",
+                config
+            )
             if result:
-                print(f"✅ 图片分析完成")
+                print(f"✅ 图片+表格分析完成")
                 return result
             return ''
         except Exception as e:
-            print(f"图片分析失败: {str(e)}")
+            print(f"图片+表格分析失败: {str(e)}")
             return ''

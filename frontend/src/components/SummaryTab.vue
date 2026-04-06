@@ -22,7 +22,7 @@
         </div>
       </div>
 
-      <!-- 关键数据：卡片网格布局 -->
+      <!-- 关键数据：卡片网格 -->
       <div class="summary-section">
         <div class="section-header">
           <span class="section-icon">📈</span>
@@ -76,14 +76,31 @@ const corePoints = computed(() => summary.value.core_points || [])
 
 const keyDataItems = computed(() => {
   const raw = summary.value.key_data || []
-  // 兼容旧格式（纯字符串数组）和新格式（对象数组）
   return raw.map(item => {
     if (typeof item === 'string') {
-      return { label: '数据', value: item, context: '', page: null }
+      return { label: '数据', value: cleanNumericStr(item), context: '', page: null }
     }
-    return item
+    return {
+      ...item,
+      value: cleanNumericStr(item.value),
+      label: cleanNumericStr(item.label)
+    }
   })
 })
+
+// 修复数字中的多余空格，如 "0 . 1" -> "0.1"、"94 . 5 %" -> "94.5%"
+function cleanNumericStr(str) {
+  if (!str) return str
+  // 合并数字和小数点之间的空格: "0 . 1" -> "0.1"
+  let s = String(str).replace(/(\d)\s+\.\s+(\d)/g, '$1.$2')
+  // 合并数字和百分号之间的空格: "94.5 %" -> "94.5%"
+  s = s.replace(/(\d)\s+(%)/g, '$1$2')
+  // 合并连续数字之间的多余空格: "1 2 3" -> "123"
+  s = s.replace(/(\d)\s+(\d)/g, '$1$2')
+  // 再次处理（多个连续数字片段）
+  s = s.replace(/(\d)\s+(\d)/g, '$1$2')
+  return s
+}
 
 const conclusions = computed(() => {
   const raw = summary.value.conclusions || []

@@ -28,6 +28,25 @@
             <span class="api-icon">⚡</span>
             Qwen3.5+
           </button>
+          <button
+            class="api-btn"
+            :class="{ active: documentStore.apiProvider === 'pipellm' }"
+            @click="selectPipeLLM"
+            title="PipeLLM：第三方多模型"
+          >
+            <span class="api-icon">🌐</span>
+            PipeLLM
+          </button>
+        </div>
+        <!-- PipeLLM 模型下拉 -->
+        <div v-if="documentStore.apiProvider === 'pipellm' && pipellmModels.length > 0" class="model-selector">
+          <select
+            :value="documentStore.apiModel || pipellmModels[0]"
+            @change="onModelChange($event)"
+            class="model-dropdown"
+          >
+            <option v-for="m in pipellmModels" :key="m" :value="m">{{ m }}</option>
+          </select>
         </div>
       </div>
 
@@ -63,7 +82,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDocumentStore } from '../stores/document'
 import { useToast } from '../composables/useToast.js'
 
@@ -71,6 +90,31 @@ const emit = defineEmits(['show-upload', 'show-history'])
 const documentStore = useDocumentStore()
 const showDropdown = ref(false)
 const toast = useToast()
+
+// PipeLLM 可用模型列表（从后端动态获取）
+const pipellmModels = computed(() => {
+  const p = documentStore.availableProviders.find(p => p.id === 'pipellm')
+  return p ? p.models : []
+})
+
+// 选择 PipeLLM 时的处理
+const selectPipeLLM = () => {
+  documentStore.setApiProvider('pipellm')
+  // 如果有可用模型且当前未选择，设为默认第一个
+  if (pipellmModels.value.length > 0 && !documentStore.apiModel) {
+    documentStore.setApiModel(pipellmModels.value[0])
+  }
+}
+
+// 模型下拉变化
+const onModelChange = (event) => {
+  documentStore.setApiModel(event.target.value)
+}
+
+// 组件加载时获取 provider 列表
+onMounted(() => {
+  documentStore.fetchProviders()
+})
 
 const toggleDropdown = () => {
   showDropdown.value = !showDropdown.value
@@ -296,5 +340,31 @@ document.addEventListener('click', (e) => {
 
 .api-icon {
   font-size: 14px;
+}
+
+.model-selector {
+  margin-left: 8px;
+}
+
+.model-dropdown {
+  background: rgba(0, 0, 0, 0.3);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.25s ease;
+}
+
+.model-dropdown:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.model-dropdown option {
+  background: #2c3e50;
+  color: white;
 }
 </style>
