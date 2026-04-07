@@ -54,7 +54,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(58, 54, 48, 0.75);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -104,8 +104,8 @@ onUnmounted(() => {
   height: 80px;
   margin: -40px 0 0 -40px;
   border: 4px solid transparent;
-  border-top-color: #667eea;
-  border-right-color: #764ba2;
+  border-top-color: #6db8e3;
+  border-right-color: #3a9fd8;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -118,8 +118,8 @@ onUnmounted(() => {
   height: 100px;
   margin: -50px 0 0 -50px;
   border: 4px solid transparent;
-  border-bottom-color: #667eea;
-  border-left-color: #764ba2;
+  border-bottom-color: #6db8e3;
+  border-left-color: #c09060;
   border-radius: 50%;
   animation: spin 1.5s linear infinite reverse;
 }

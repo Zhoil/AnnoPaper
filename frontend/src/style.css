@@ -15,7 +15,8 @@ body {
     'Microsoft YaHei', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  background: linear-gradient(160deg, #e6dfd3 0%, #ddd5c7 50%, #e2dbd0 100%);
+  color: #3a3630;
   min-height: 100vh;
 }
 
@@ -31,17 +32,17 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #e0d8cb;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888;
+  background: #b5a998;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: #9e9280;
 }
 
 /* 过渡动画 */
@@ -78,7 +79,7 @@ button {
 
 button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(58, 159, 216, 0.2);
 }
 
 button:active {
@@ -92,5 +93,5 @@ input, textarea {
 }
 
 input:focus, textarea:focus {
-  border-color: #4a90e2;
+  border-color: #3a9fd8;
 }

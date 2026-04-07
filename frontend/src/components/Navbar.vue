@@ -161,13 +161,14 @@ document.addEventListener('click', (e) => {
 
 <style scoped>
 .navbar {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: rgba(245, 241, 234, 0.95);
   padding: 16px 40px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px rgba(192, 144, 96, 0.12);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid #d5cabb;
 }
 
 .navbar-brand {
@@ -193,8 +194,8 @@ document.addEventListener('click', (e) => {
 .title {
   font-size: 24px;
   font-weight: 700;
-  color: white;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+  color: #3a3630;
+  text-shadow: none;
   display: flex;
   align-items: baseline;
   gap: 2px;
@@ -202,9 +203,9 @@ document.addEventListener('click', (e) => {
 
 .brand-accent {
   font-style: normal;
-  color: #ffd700;
+  color: #c09060;
   font-size: 26px;
-  text-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+  text-shadow: 0 0 8px rgba(192, 144, 96, 0.3);
 }
 
 .navbar-menu {
@@ -216,22 +217,25 @@ document.addEventListener('click', (e) => {
 .menu-item {
   position: relative;
   padding: 10px 20px;
-  color: white;
+  color: #3a3630;
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 10px;
   transition: all 0.3s ease;
-  background: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, rgba(58, 159, 216, 0.12) 0%, rgba(58, 159, 216, 0.06) 100%);
+  border: 1px solid rgba(58, 159, 216, 0.18);
   backdrop-filter: blur(10px);
 }
 
 .menu-item:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, rgba(58, 159, 216, 0.22) 0%, rgba(58, 159, 216, 0.14) 100%);
+  border-color: rgba(58, 159, 216, 0.35);
   transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(58, 159, 216, 0.18);
 }
 
 .menu-icon {
@@ -251,9 +255,10 @@ document.addEventListener('click', (e) => {
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-  background: white;
+  background: #ffffff;
   border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 24px rgba(192, 144, 96, 0.15);
+  border: 1px solid #d5cabb;
   min-width: 200px;
   overflow: hidden;
   z-index: 100;
@@ -261,11 +266,11 @@ document.addEventListener('click', (e) => {
 
 .dropdown-item {
   padding: 14px 20px;
-  color: #2c3e50;
+  color: #3a3630;
   font-size: 15px;
   cursor: pointer;
   transition: all 0.2s ease;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #e8dfd2;
 }
 
 .dropdown-item:last-child {
@@ -273,7 +278,7 @@ document.addEventListener('click', (e) => {
 }
 
 .dropdown-item:hover {
-  background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%);
+  background: rgba(58, 159, 216, 0.08);
   padding-left: 28px;
 }
 
@@ -292,22 +297,23 @@ document.addEventListener('click', (e) => {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, rgba(58, 159, 216, 0.1) 0%, rgba(58, 159, 216, 0.04) 100%);
   padding: 6px 14px;
   border-radius: 30px;
   backdrop-filter: blur(10px);
+  border: 1px solid rgba(58, 159, 216, 0.22);
 }
 
 .api-label {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
+  color: #4a6a7a;
   white-space: nowrap;
 }
 
 .api-toggle {
   display: flex;
   gap: 4px;
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(58, 159, 216, 0.08);
   border-radius: 20px;
   padding: 3px;
 }
@@ -317,7 +323,7 @@ document.addEventListener('click', (e) => {
   border-radius: 16px;
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
+  color: #8a7e72;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -327,15 +333,15 @@ document.addEventListener('click', (e) => {
 }
 
 .api-btn.active {
-  background: white;
-  color: #667eea;
+  background: linear-gradient(135deg, #3a9fd8 0%, #2d8bc5 100%);
+  color: white;
   font-weight: 700;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 3px 12px rgba(58, 159, 216, 0.4);
 }
 
 .api-btn:not(.active):hover {
-  color: white;
-  background: rgba(255, 255, 255, 0.15);
+  color: #3a9fd8;
+  background: rgba(58, 159, 216, 0.1);
 }
 
 .api-icon {
@@ -347,9 +353,9 @@ document.addEventListener('click', (e) => {
 }
 
 .model-dropdown {
-  background: rgba(0, 0, 0, 0.3);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(58, 159, 216, 0.06);
+  color: #3a3630;
+  border: 1px solid rgba(58, 159, 216, 0.2);
   border-radius: 12px;
   padding: 4px 10px;
   font-size: 12px;
@@ -359,12 +365,12 @@ document.addEventListener('click', (e) => {
 }
 
 .model-dropdown:hover {
-  border-color: rgba(255, 255, 255, 0.6);
-  background: rgba(0, 0, 0, 0.4);
+  border-color: rgba(58, 159, 216, 0.4);
+  background: rgba(58, 159, 216, 0.1);
 }
 
 .model-dropdown option {
-  background: #2c3e50;
-  color: white;
+  background: #ffffff;
+  color: #3a3630;
 }
 </style>

@@ -30,23 +30,23 @@ const handleScrollTo = (highlightId) => {
 .main-content {
   flex: 1;
   min-height: 0;
-  padding: 20px;
+  padding: 8px;
   overflow: hidden;
 }
 
 .content-wrapper {
   display: flex;
-  gap: 20px;
+  gap: 8px;
   height: 100%;
-  max-width: 1800px;
   margin: 0 auto;
 }
 
 .left-panel {
   flex: 3;
-  background: white;
+  background: #ffffff;
   border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(192, 144, 96, 0.12);
+  border: 1px solid #d5cabb;
   overflow: hidden;
   animation: slideInLeft 0.6s ease;
 }

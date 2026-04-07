@@ -191,14 +191,15 @@ const formatDate = (dateString) => {
 }
 
 .modal-container {
-  background: white;
+  background: #f5f1ea;
   border-radius: 20px;
   width: 90%;
   max-width: 800px;
   max-height: 90vh;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px rgba(192, 144, 96, 0.12);
   animation: slideUp 0.3s ease;
+  border: 1px solid #d5cabb;
 }
 
 @keyframes slideUp {
@@ -214,11 +215,11 @@ const formatDate = (dateString) => {
 
 .modal-header {
   padding: 24px 32px;
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 1px solid #d5cabb;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
   color: white;
 }
 
@@ -260,8 +261,8 @@ const formatDate = (dateString) => {
 .spinner {
   width: 50px;
   height: 50px;
-  border: 4px solid #f0f0f0;
-  border-top-color: #667eea;
+  border: 4px solid #e0d8cb;
+  border-top-color: #3a9fd8;
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 20px;
@@ -281,7 +282,7 @@ const formatDate = (dateString) => {
 .empty-state p,
 .loading-state p {
   font-size: 16px;
-  color: #7f8c8d;
+  color: #8a7e72;
 }
 
 .history-list {
@@ -292,10 +293,10 @@ const formatDate = (dateString) => {
 
 .history-item {
   display: flex;
-  background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);
+  background: #ffffff;
   border-radius: 12px;
   padding: 20px;
-  border: 2px solid transparent;
+  border: 1px solid #d5cabb;
   transition: all 0.3s ease;
   animation: slideInUp 0.5s ease;
 }
@@ -312,8 +313,8 @@ const formatDate = (dateString) => {
 }
 
 .history-item:hover {
-  border-color: #667eea;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+  border-color: #3a9fd8;
+  box-shadow: 0 4px 12px rgba(58, 159, 216, 0.12);
   transform: translateY(-2px);
 }
 
@@ -332,13 +333,13 @@ const formatDate = (dateString) => {
 .item-title {
   font-size: 18px;
   font-weight: 600;
-  color: #2c3e50;
+  color: #3a3630;
   flex: 1;
 }
 
 .item-date {
   font-size: 13px;
-  color: #7f8c8d;
+  color: #94a3b8;
   white-space: nowrap;
   margin-left: 12px;
 }
@@ -351,8 +352,8 @@ const formatDate = (dateString) => {
 
 .meta-tag {
   font-size: 13px;
-  color: #7f8c8d;
-  background: rgba(102, 126, 234, 0.1);
+  color: #94a3b8;
+  background: rgba(58, 159, 216, 0.08);
   padding: 4px 12px;
   border-radius: 12px;
 }
@@ -402,12 +403,12 @@ const formatDate = (dateString) => {
   gap: 20px;
   margin-top: 24px;
   padding-top: 24px;
-  border-top: 2px solid #f0f0f0;
+  border-top: 1px solid #d5cabb;
 }
 
 .page-btn {
   padding: 10px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
   color: white;
   border-radius: 8px;
   font-size: 14px;
@@ -423,12 +424,12 @@ const formatDate = (dateString) => {
 
 .page-btn:not(:disabled):hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 12px rgba(58, 159, 216, 0.25);
 }
 
 .page-info {
   font-weight: 600;
-  color: #2c3e50;
+  color: #3a3630;
 }
 
 .list-move,

@@ -196,14 +196,15 @@ const handleUrlSubmit = () => {
 }
 
 .modal-container {
-  background: white;
+  background: #f5f1ea;
   border-radius: 20px;
   width: 90%;
   max-width: 600px;
   max-height: 90vh;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px rgba(192, 144, 96, 0.12);
   animation: slideUp 0.3s ease;
+  border: 1px solid #d5cabb;
 }
 
 @keyframes slideUp {
@@ -219,11 +220,11 @@ const handleUrlSubmit = () => {
 
 .modal-header {
   padding: 24px 32px;
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 1px solid #d5cabb;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
   color: white;
 }
 
@@ -254,6 +255,7 @@ const handleUrlSubmit = () => {
   padding: 32px;
   max-height: calc(90vh - 200px);
   overflow-y: auto;
+  color: #3a3630;
 }
 
 .upload-tabs {
@@ -265,8 +267,8 @@ const handleUrlSubmit = () => {
 .tab-button {
   flex: 1;
   padding: 12px 24px;
-  background: #f9fafb;
-  color: #7f8c8d;
+  background: rgba(58, 159, 216, 0.04);
+  color: #8a7e72;
   border-radius: 8px;
   font-size: 16px;
   font-weight: 500;
@@ -274,7 +276,7 @@ const handleUrlSubmit = () => {
 }
 
 .tab-button.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
   color: white;
 }
 
@@ -283,23 +285,23 @@ const handleUrlSubmit = () => {
 }
 
 .dropzone {
-  border: 3px dashed #d0d0d0;
+  border: 3px dashed #d4cec2;
   border-radius: 12px;
   padding: 60px 40px;
   text-align: center;
   cursor: pointer;
   transition: all 0.3s ease;
-  background: #fafafa;
+  background: #ede7dc;
 }
 
 .dropzone.dragover {
-  border-color: #667eea;
-  background: #f0f4ff;
+  border-color: #3a9fd8;
+  background: rgba(58,159,216,0.06);
 }
 
 .dropzone:hover {
-  border-color: #667eea;
-  background: #f9fbff;
+  border-color: #3a9fd8;
+  background: rgba(58,159,216,0.03);
 }
 
 .dropzone-icon {
@@ -320,13 +322,13 @@ const handleUrlSubmit = () => {
 .primary-text {
   font-size: 18px;
   font-weight: 600;
-  color: #2c3e50;
+  color: #3a3630;
   margin-bottom: 8px;
 }
 
 .secondary-text {
   font-size: 14px;
-  color: #7f8c8d;
+  color: #8a7e72;
 }
 
 .file-info {
@@ -334,7 +336,7 @@ const handleUrlSubmit = () => {
   justify-content: space-between;
   align-items: center;
   padding: 16px;
-  background: #f9fafb;
+  background: #f5f0e8;
   border-radius: 12px;
   margin-top: 16px;
 }
@@ -352,13 +354,13 @@ const handleUrlSubmit = () => {
 
 .file-name {
   font-weight: 600;
-  color: #2c3e50;
+  color: #3a3630;
   margin-bottom: 4px;
 }
 
 .file-size {
   font-size: 13px;
-  color: #7f8c8d;
+  color: #8a7e72;
 }
 
 .remove-btn {
@@ -379,7 +381,7 @@ const handleUrlSubmit = () => {
 .progress-bar {
   position: relative;
   height: 32px;
-  background: #f0f0f0;
+  background: #e0d8cb;
   border-radius: 16px;
   overflow: hidden;
   margin-top: 16px;
@@ -387,7 +389,7 @@ const handleUrlSubmit = () => {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
   transition: width 0.3s ease;
 }
 
@@ -397,7 +399,7 @@ const handleUrlSubmit = () => {
   left: 50%;
   transform: translate(-50%, -50%);
   font-weight: 600;
-  color: #2c3e50;
+  color: #3a3630;
 }
 
 .url-input-area {
@@ -407,27 +409,29 @@ const handleUrlSubmit = () => {
 .url-input {
   width: 100%;
   padding: 16px;
-  border: 2px solid #e0e0e0;
+  border: 1px solid #d5cabb;
   border-radius: 12px;
   font-size: 16px;
   transition: all 0.3s ease;
+  background: #ffffff;
+  color: #3a3630;
 }
 
 .url-input:focus {
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  border-color: #3a9fd8;
+  box-shadow: 0 0 0 3px rgba(58, 159, 216, 0.1);
 }
 
 .url-hint {
   margin-top: 12px;
   font-size: 13px;
-  color: #7f8c8d;
+  color: #8a7e72;
   text-align: center;
 }
 
 .error-message {
   padding: 12px 16px;
-  background: #ffe0e0;
+  background: rgba(211,47,47,0.06);
   color: #d32f2f;
   border-radius: 8px;
   margin-top: 16px;
@@ -436,11 +440,11 @@ const handleUrlSubmit = () => {
 
 .modal-footer {
   padding: 20px 32px;
-  border-top: 2px solid #f0f0f0;
+  border-top: 1px solid #d5cabb;
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  background: #f9fafb;
+  background: #ede7dc;
 }
 
 .cancel-btn,
@@ -453,16 +457,16 @@ const handleUrlSubmit = () => {
 }
 
 .cancel-btn {
-  background: #e0e0e0;
-  color: #2c3e50;
+  background: #f5f0e8;
+  color: #8a7e72;
 }
 
 .cancel-btn:hover {
-  background: #d0d0d0;
+  background: #ede6da;
 }
 
 .submit-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
   color: white;
 }
 
@@ -473,6 +477,6 @@ const handleUrlSubmit = () => {
 }
 
 .submit-btn:not(:disabled):hover {
-  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 8px 20px rgba(58, 159, 216, 0.3);
 }
 </style>

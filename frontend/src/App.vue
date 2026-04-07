@@ -53,7 +53,7 @@
                       fill="none" stroke="rgba(255,255,255,0.38)" stroke-width="1.5"/>
                 <!-- 主白色填充区（S 形曲线以下 = 白色内容区） -->
                 <path d="M0,80 C120,80 280,25 400,25 C520,25 600,80 720,80 C840,80 920,135 1080,135 C1240,135 1360,80 1440,80 L1440,160 L0,160 Z"
-                      fill="white"/>
+                      fill="#e2dbd0"/>
               </svg>
             </div>
           </div>
@@ -161,13 +161,13 @@
               <section class="tech-section">
                 <p class="tech-label">技术驱动</p>
                 <div class="tech-tags">
-                  <span class="tech-tag">🧠 DeepSeek-R1</span>
-                  <span class="tech-tag">⚡ Qwen3.5-Plus</span>
-                  <span class="tech-tag">🐍 Python Flask</span>
-                  <span class="tech-tag">💚 Vue 3</span>
-                  <span class="tech-tag">📄 pdfplumber</span>
-                  <span class="tech-tag">🎨 ReportLab</span>
-                  <span class="tech-tag">📑 PyMuPDF</span>
+                  <span class="tech-tag">📚 Docling 结构化解析</span>
+                  <span class="tech-tag">📑 PyMuPDF 坐标定位与合并</span>
+                  <span class="tech-tag">📄 pdfplumber 字符级提取</span>
+                  <span class="tech-tag">🎨 ReportLab 透明覆盖标注</span>
+                  <span class="tech-tag">💚 Vue 3 + Pinia 状态管理</span>
+                  <span class="tech-tag">🐍 Flask RESTful 后端</span>
+                  <span class="tech-tag">✂️ jieba 中文分词</span>
                 </div>
               </section>
 
@@ -217,7 +217,7 @@ const navVisible = ref(false)
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #f8f9ff;
+  background: linear-gradient(160deg, #e6dfd3 0%, #ddd5c7 50%, #e2dbd0 100%);
 }
 
 /* ===== HOVER NAVBAR WRAPPER ===== */
@@ -231,7 +231,7 @@ const navVisible = ref(false)
 
 .nav-trigger-strip {
   height: 8px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #c0d8ec 0%, #a8cce6 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -241,13 +241,13 @@ const navVisible = ref(false)
 
 .trigger-indicator {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(58, 159, 216, 0.6);
   line-height: 1;
   transition: opacity 0.3s;
 }
 
 .nav-trigger-strip:hover .trigger-indicator {
-  color: white;
+  color: #3a9fd8;
 }
 
 .nav-slide-enter-active,
@@ -280,24 +280,59 @@ const navVisible = ref(false)
   overflow-y: auto;
 }
 
-/* ===== BLUE HERO ZONE ===== */
+/* ===== DARK HERO ZONE ===== */
 .hero-zone {
   background: linear-gradient(160deg,
-    #0c1f5c 0%,
-    #12307d 25%,
-    #1a4abc 55%,
-    #2c5fd4 80%,
-    #3d72e0 100%
+    #c8e0f5 0%,
+    #b0d2ee 25%,
+    #98c5e8 55%,
+    #80b8e0 80%,
+    #6aacda 100%
   );
   position: relative;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* Floating glow orbs */
+.hero-zone::before {
+  content: '';
+  position: absolute;
+  top: -20%;
+  left: -10%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(58,159,216,0.18) 0%, transparent 70%);
+  border-radius: 50%;
+  animation: orbFloat 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.hero-zone::after {
+  content: '';
+  position: absolute;
+  bottom: -10%;
+  right: -5%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(192,144,96,0.16) 0%, transparent 70%);
+  border-radius: 50%;
+  animation: orbFloat 10s ease-in-out infinite reverse;
+  pointer-events: none;
+}
+
+@keyframes orbFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(30px, -20px) scale(1.1); }
 }
 
 .hero-inner {
-  max-width: 1200px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 70px 40px 60px;
+  padding: 44px 32px 40px;
   text-align: center;
+  position: relative;
+  z-index: 1;
 }
 
 /* ===== WAVE DIVIDER ===== */
@@ -314,16 +349,16 @@ const navVisible = ref(false)
   display: block;
 }
 
-/* ===== WHITE CONTENT ZONE ===== */
+/* ===== DARK CONTENT ZONE ===== */
 .content-zone {
-  background: white;
+  background: linear-gradient(180deg, #e2dbd0 0%, #dbd3c6 100%);
   flex: 1;
 }
 
 .content-inner {
-  max-width: 1200px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 32px 40px 60px;
+  padding: 20px 32px 40px;
 }
 
 @keyframes fadeInUp {
@@ -335,11 +370,11 @@ const navVisible = ref(false)
 .hero-badge {
   display: inline-block;
   padding: 6px 18px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(58, 159, 216, 0.35);
   border-radius: 20px;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.9);
+  color: #1a3a52;
   font-weight: 500;
   margin-bottom: 24px;
   letter-spacing: 0.5px;
@@ -368,20 +403,20 @@ const navVisible = ref(false)
 .hero-title {
   font-size: 64px;
   font-weight: 800;
-  color: white;
+  color: #1a3a52;
   line-height: 1;
   letter-spacing: -2px;
-  text-shadow: 0 2px 24px rgba(0,0,0,0.25);
+  text-shadow: 0 2px 12px rgba(58,159,216,0.15);
 }
 
 .title-accent {
-  color: #7dd3fc;
-  text-shadow: 0 0 30px rgba(125, 211, 252, 0.7);
+  color: #3a9fd8;
+  text-shadow: 0 0 20px rgba(58, 159, 216, 0.3);
 }
 
 .hero-desc {
   font-size: 18px;
-  color: rgba(255, 255, 255, 0.78);
+  color: #1a4a66;
   line-height: 1.8;
   margin-bottom: 36px;
   max-width: 600px;
@@ -400,30 +435,30 @@ const navVisible = ref(false)
   padding: 14px 36px;
   font-size: 17px;
   font-weight: 600;
-  color: #0c1f5c;
-  background: white;
+  color: white;
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
   border-radius: 50px;
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255,255,255,0.2);
+  box-shadow: 0 8px 28px rgba(58, 159, 216, 0.3), 0 0 0 1px rgba(58,159,216,0.15);
   transition: all 0.3s ease;
   cursor: pointer;
 }
 
 .btn-primary:hover {
   transform: translateY(-3px);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
-  background: #f0f7ff;
+  box-shadow: 0 14px 40px rgba(58, 159, 216, 0.4);
+  filter: brightness(1.05);
 }
 
 .btn-secondary {
   padding: 14px 36px;
   font-size: 17px;
   font-weight: 600;
-  color: white;
-  background: rgba(255, 255, 255, 0.12);
-  border: 2px solid rgba(255, 255, 255, 0.38);
+  color: #2d5a72;
+  background: rgba(255, 255, 255, 0.55);
+  border: 2px solid rgba(58, 159, 216, 0.25);
   border-radius: 50px;
   display: inline-flex;
   align-items: center;
@@ -434,8 +469,8 @@ const navVisible = ref(false)
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.22);
-  border-color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.75);
+  border-color: rgba(58, 159, 216, 0.45);
   transform: translateY(-2px);
 }
 
@@ -444,19 +479,19 @@ const navVisible = ref(false)
   display: flex;
   align-items: center;
   gap: 16px;
-  margin: 40px 0 32px;
+  margin: 32px 0 24px;
 }
 
 .divider-line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, transparent, #667eea40, transparent);
+  background: linear-gradient(90deg, transparent, rgba(192,144,96,0.45), transparent);
 }
 
 .divider-text {
   font-size: 14px;
   font-weight: 600;
-  color: #9ca3af;
+  color: #8a7050;
   letter-spacing: 2px;
   text-transform: uppercase;
   white-space: nowrap;
@@ -466,19 +501,29 @@ const navVisible = ref(false)
 .features-section {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
+  gap: 20px;
   margin-bottom: 16px;
 }
 
 .feature-card {
-  background: white;
-  border-radius: 20px;
-  padding: 32px 28px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-  border: 1px solid rgba(102, 126, 234, 0.1);
-  transition: all 0.3s ease;
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 28px 24px;
+  box-shadow: 0 4px 20px rgba(192, 144, 96, 0.12);
+  border: 1px solid #d5cabb;
+  transition: all 0.4s ease;
   position: relative;
   overflow: hidden;
+  animation: cardFadeIn 0.6s ease both;
+}
+
+.feature-card:nth-child(1) { animation-delay: 0.1s; }
+.feature-card:nth-child(2) { animation-delay: 0.25s; }
+.feature-card:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes cardFadeIn {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .feature-card::before {
@@ -486,14 +531,15 @@ const navVisible = ref(false)
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #667eea, #764ba2);
+  background: linear-gradient(90deg, #6db8e3, #3a9fd8);
   opacity: 0;
   transition: opacity 0.3s;
 }
 
 .feature-card:hover {
   transform: translateY(-6px);
-  box-shadow: 0 12px 40px rgba(102, 126, 234, 0.15);
+  box-shadow: 0 8px 32px rgba(58, 159, 216, 0.12), 0 4px 16px rgba(192, 144, 96, 0.06);
+  border-color: rgba(58, 159, 216, 0.25);
 }
 
 .feature-card:hover::before {
@@ -501,12 +547,12 @@ const navVisible = ref(false)
 }
 
 .feature-card.featured {
-  border-color: rgba(240, 147, 251, 0.3);
-  background: linear-gradient(180deg, #fff, #fdf4ff);
+  border-color: rgba(192, 144, 96, 0.3);
+  background: linear-gradient(180deg, #ffffff, #fdf9f3);
 }
 
 .feature-card.featured::before {
-  background: linear-gradient(90deg, #f093fb, #f5576c);
+  background: linear-gradient(90deg, #d4a574, #c09060);
   opacity: 1;
 }
 
@@ -514,7 +560,7 @@ const navVisible = ref(false)
   position: absolute;
   top: 16px;
   right: 16px;
-  background: linear-gradient(135deg, #f093fb, #f5576c);
+  background: linear-gradient(135deg, #d4a574, #c09060);
   color: white;
   font-size: 11px;
   font-weight: 700;
@@ -540,13 +586,13 @@ const navVisible = ref(false)
 .feature-title {
   font-size: 18px;
   font-weight: 700;
-  color: #1f2937;
+  color: #3a3630;
   margin-bottom: 12px;
 }
 
 .feature-desc {
   font-size: 14px;
-  color: #6b7280;
+  color: #8a7e72;
   line-height: 1.7;
   margin-bottom: 16px;
 }
@@ -562,7 +608,7 @@ const navVisible = ref(false)
 
 .feature-list li {
   font-size: 13px;
-  color: #667eea;
+  color: #3a9fd8;
   font-weight: 500;
   display: flex;
   align-items: center;
@@ -573,8 +619,8 @@ const navVisible = ref(false)
   content: '✓';
   font-size: 12px;
   font-weight: 700;
-  color: #667eea;
-  background: #667eea15;
+  color: #3a9fd8;
+  background: rgba(58, 159, 216, 0.1);
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -589,12 +635,12 @@ const navVisible = ref(false)
   display: flex;
   align-items: flex-start;
   gap: 0;
-  margin-bottom: 48px;
-  background: #f8faff;
-  border-radius: 20px;
-  padding: 36px 32px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-  border: 1px solid rgba(102, 126, 234, 0.08);
+  margin-bottom: 36px;
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 28px 24px;
+  box-shadow: 0 4px 20px rgba(192, 144, 96, 0.12);
+  border: 1px solid #d5cabb;
 }
 
 .step-item {
@@ -607,7 +653,7 @@ const navVisible = ref(false)
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #6db8e3, #3a9fd8);
   color: white;
   font-size: 15px;
   font-weight: 800;
@@ -615,7 +661,7 @@ const navVisible = ref(false)
   align-items: center;
   justify-content: center;
   margin: 0 auto 12px;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(58, 159, 216, 0.3);
 }
 
 .step-icon {
@@ -626,13 +672,13 @@ const navVisible = ref(false)
 .step-title {
   font-size: 15px;
   font-weight: 700;
-  color: #1f2937;
+  color: #3a3630;
   margin-bottom: 8px;
 }
 
 .step-desc {
   font-size: 13px;
-  color: #6b7280;
+  color: #8a7e72;
   line-height: 1.6;
 }
 
@@ -650,23 +696,23 @@ const navVisible = ref(false)
 .connector-line {
   height: 2px;
   width: 32px;
-  background: linear-gradient(90deg, #667eea40, #764ba240);
+  background: linear-gradient(90deg, rgba(58,159,216,0.2), rgba(192,144,96,0.2));
 }
 
 .connector-arrow {
   font-size: 12px;
-  color: #667eea80;
+  color: rgba(58,159,216,0.4);
 }
 
 /* ===== TECH SECTION ===== */
 .tech-section {
   text-align: center;
-  padding: 32px 20px 16px;
+  padding: 24px 16px 12px;
 }
 
 .tech-label {
   font-size: 13px;
-  color: #9ca3af;
+  color: #8a7050;
   font-weight: 600;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -682,23 +728,23 @@ const navVisible = ref(false)
 
 .tech-tag {
   padding: 7px 16px;
-  background: white;
-  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  border: 1px solid #d5cabb;
   border-radius: 20px;
   font-size: 13px;
   font-weight: 500;
-  color: #374151;
+  color: #8a7e72;
   transition: all 0.2s ease;
   cursor: default;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  box-shadow: 0 1px 4px rgba(192,144,96,0.06);
 }
 
 .tech-tag:hover {
-  border-color: #667eea;
-  color: #667eea;
-  background: #667eea08;
+  border-color: rgba(58,159,216,0.3);
+  color: #3a9fd8;
+  background: rgba(58,159,216,0.04);
   transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(102,126,234,0.12);
+  box-shadow: 0 4px 12px rgba(58,159,216,0.1);
 }
 
 /* ===== TRANSITIONS ===== */
@@ -741,10 +787,10 @@ const navVisible = ref(false)
     font-size: 44px;
   }
   .hero-inner {
-    padding: 50px 20px 50px;
+    padding: 32px 16px 32px;
   }
   .content-inner {
-    padding: 24px 20px 40px;
+    padding: 16px 16px 28px;
   }
 }
 </style>

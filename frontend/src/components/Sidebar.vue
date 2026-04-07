@@ -48,9 +48,10 @@ const handleScrollTo = (highlightId) => {
 
 <style scoped>
 .sidebar {
-  background: white;
+  background: #f5f1ea;
   border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(192, 144, 96, 0.12);
+  border: 1px solid #d5cabb;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -59,8 +60,8 @@ const handleScrollTo = (highlightId) => {
 
 .tab-bar {
   display: flex;
-  background: linear-gradient(to bottom, #ffffff, #f9fafb);
-  border-bottom: 2px solid #f0f0f0;
+  background: linear-gradient(180deg, #f0eae0 0%, #e8e0d4 100%);
+  border-bottom: 2px solid #d5cabb;
   flex-shrink: 0;
 }
 
@@ -84,7 +85,7 @@ const handleScrollTo = (highlightId) => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
   transform: scaleX(0);
   transition: transform 0.3s ease;
 }
@@ -94,21 +95,21 @@ const handleScrollTo = (highlightId) => {
 }
 
 .tab-item:hover {
-  background: rgba(102, 126, 234, 0.05);
+  background: rgba(58, 159, 216, 0.06);
 }
 
 .tab-item.active {
-  color: #667eea;
+  color: #3a9fd8;
   font-weight: 600;
 }
 
 /* AI 对话 tab 高亮 */
 .tab-item:last-child.active {
-  color: #764ba2;
+  color: #c09060;
 }
 
 .tab-item:last-child.active::after {
-  background: linear-gradient(135deg, #764ba2 0%, #f093fb 100%);
+  background: linear-gradient(135deg, #d4a574 0%, #c09060 100%);
 }
 
 .tab-icon {
@@ -117,6 +118,7 @@ const handleScrollTo = (highlightId) => {
 
 .tab-label {
   font-size: 12px;
+  color: #8a7e72;
 }
 
 .tab-content {

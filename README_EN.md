@@ -1,17 +1,21 @@
-# AnnoPaper Intelligent Reading
+<div align="center">
+  <img src="images/AnnoPaper.png" alt="AnnoPaper" width="180" />
+  <h1>AnnoPaper Intelligent Reading</h1>
+  <p>
+    <a href="README.md"><img src="https://img.shields.io/badge/语言-中文-red?logo=googletranslate&logoColor=white" alt="中文" /></a>
+    <a href="backend/requirements.txt"><img src="https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white" alt="Python" /></a>
+    <a href="backend/app.py"><img src="https://img.shields.io/badge/Flask-Backend-000000?logo=flask&logoColor=white" alt="Flask" /></a>
+    <a href="frontend/package.json"><img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white" alt="Vue 3" /></a>
+    <a href="frontend/package.json"><img src="https://img.shields.io/badge/Node.js-16%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js" /></a>
+    <a href="https://platform.deepseek.com/"><img src="https://img.shields.io/badge/DeepSeek--R1-LLM-6C47FF?logo=openai&logoColor=white" alt="DeepSeek-R1" /></a>
+    <img src="https://img.shields.io/badge/Version-v3.0.0-orange.svg" alt="Version" />
+    <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
+  </p>
+  <p><strong>AI-powered document deep analysis & physical annotation system built with Vue 3 + Flask + Docling structured parsing + multi-LLM engines</strong></p>
+  <p>📚 Docling-driven document parsing · 🎯 Character-level precise annotation · 🧠 Multi-model AI analysis · 📄 PDF/DOCX/HTML/URL support</p>
+</div>
 
-<p align="center">
-  <a href="README.md"><img src="https://img.shields.io/badge/语言-中文-red?logo=googletranslate&logoColor=white" alt="中文" /></a>
-  <a href="backend/requirements.txt"><img src="https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white" alt="Python" /></a>
-  <a href="backend/app.py"><img src="https://img.shields.io/badge/Flask-Backend-000000?logo=flask&logoColor=white" alt="Flask" /></a>
-  <a href="frontend/package.json"><img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white" alt="Vue 3" /></a>
-  <a href="frontend/package.json"><img src="https://img.shields.io/badge/Node.js-16%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js" /></a>
-  <a href="https://platform.deepseek.com/"><img src="https://img.shields.io/badge/DeepSeek--R1-LLM-6C47FF?logo=openai&logoColor=white" alt="DeepSeek-R1" /></a>
-  <img src="https://img.shields.io/badge/Version-v3.0.0-orange.svg" alt="Version" />
-  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
-</p>
-
-> An AI-powered document deep analysis and physical annotation system built with Vue 3 + Flask + DeepSeek-R1 / Qwen3.6-Plus / PipeLLM multi-engine architecture
+> 💡 **Docling** serves as the **core document parsing engine** of this project, providing advanced structured extraction capabilities (with optional OCR), intelligently recognizing tables, images, formulas and other complex elements. When Docling is unavailable, the system automatically falls back to PyMuPDF for basic parsing.
 
 ---
 

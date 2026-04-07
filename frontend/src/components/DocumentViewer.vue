@@ -277,21 +277,21 @@ defineExpose({ scrollToHighlight })
 
 .document-header {
   padding: 24px 32px;
-  border-bottom: 2px solid #f0f0f0;
-  background: linear-gradient(to bottom, #ffffff, #f9fafb);
+  border-bottom: 1px solid #d5cabb;
+  background: linear-gradient(to bottom, #f5f1ea, #ede7dc);
 }
 
 .document-title {
   font-size: 28px;
   font-weight: 700;
-  color: #2c3e50;
+  color: #3a3630;
   margin-bottom: 12px;
 }
 
 .document-meta {
   display: flex;
   gap: 12px;
-  color: #7f8c8d;
+  color: #8a7e72;
   font-size: 14px;
   align-items: center;
 }
@@ -303,9 +303,9 @@ defineExpose({ scrollToHighlight })
 }
 
 .format-badge {
-  background: #667eea15;
-  color: #667eea;
-  border: 1px solid #667eea40;
+  background: #3a9fd815;
+  color: #3a9fd8;
+  border: 1px solid #3a9fd840;
   border-radius: 12px;
   padding: 2px 10px;
   font-size: 12px;
@@ -333,7 +333,7 @@ defineExpose({ scrollToHighlight })
   min-height: 0;
   width: 100%;
   border: none;
-  background: white;
+  background: #f5f5f0;
 }
 
 /* 网页降级：Word样式展示 */
@@ -350,11 +350,11 @@ defineExpose({ scrollToHighlight })
   align-items: center;
   gap: 10px;
   padding: 12px 24px;
-  background: #f0f7ff;
-  border-bottom: 1px solid #d0e3ff;
+  background: #ede7dc;
+  border-bottom: 1px solid #d5cabb;
   flex-shrink: 0;
   font-size: 14px;
-  color: #374151;
+  color: #495057;
 }
 
 .web-fallback-content {
@@ -362,11 +362,11 @@ defineExpose({ scrollToHighlight })
   min-height: 0;
   overflow-y: auto;
   padding: 40px 56px;
-  background: white;
+  background: #f8f8f5;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 15px;
   line-height: 1.8;
-  color: #111;
+  color: #222;
 }
 
 .web-fallback-content :deep(p) {
@@ -400,8 +400,8 @@ defineExpose({ scrollToHighlight })
   align-items: center;
   justify-content: space-between;
   padding: 12px 24px;
-  background: #f8f9fa;
-  border-bottom: 1px solid #e5e7eb;
+  background: #ede7dc;
+  border-bottom: 1px solid #d5cabb;
   flex-shrink: 0;
   gap: 16px;
 }
@@ -411,7 +411,7 @@ defineExpose({ scrollToHighlight })
   align-items: center;
   gap: 10px;
   font-size: 14px;
-  color: #374151;
+  color: #495057;
 }
 
 .toolbar-icon {
@@ -440,7 +440,7 @@ defineExpose({ scrollToHighlight })
 .download-btn {
   flex-shrink: 0;
   padding: 8px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
   color: white;
   border: none;
   border-radius: 8px;
@@ -448,13 +448,13 @@ defineExpose({ scrollToHighlight })
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.25);
+  box-shadow: 0 2px 6px rgba(58, 159, 216, 0.25);
   white-space: nowrap;
 }
 
 .download-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
+  box-shadow: 0 4px 12px rgba(58, 159, 216, 0.3);
 }
 
 /* mammoth 渲染内容区 */
@@ -463,11 +463,11 @@ defineExpose({ scrollToHighlight })
   min-height: 0;
   overflow-y: auto;
   padding: 40px 56px;
-  background: white;
+  background: #f8f8f5;
   font-family: 'Times New Roman', Times, serif;
   font-size: 14pt;
   line-height: 1.8;
-  color: #111;
+  color: #222;
 }
 
 /* 还原 Word 常见格式 */
@@ -569,11 +569,11 @@ defineExpose({ scrollToHighlight })
   vertical-align: top;
 }
 .docx-rendered :deep(th) {
-  background: #f3f4f6;
+  background: #eee;
   font-weight: 600;
 }
 .docx-rendered :deep(tr:nth-child(even) td) {
-  background: #fafafa;
+  background: #f0f0ed;
 }
 
 /* 高亮标记样式 */
@@ -603,14 +603,14 @@ defineExpose({ scrollToHighlight })
   min-height: 0;
   padding: 32px;
   overflow-y: auto;
-  background: white;
+  background: #f8f8f5;
   border-radius: 8px;
 }
 
 .document-content :deep(p) {
   margin-bottom: 12px;
   line-height: 1.8;
-  color: #2c3e50;
+  color: #333;
 }
 
 .document-content :deep(.highlight) {

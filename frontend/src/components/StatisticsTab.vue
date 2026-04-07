@@ -147,7 +147,7 @@ const keyDataChartItems = computed(() => {
   }).slice(0, 6)  // 最多 6 个
 })
 
-const kdColors = ['#667eea', '#764ba2', '#ff6b6b', '#ffa94d', '#51cf66', '#339af0', '#e64980', '#20c997']
+const kdColors = ['#3a9fd8', '#c09060', '#ff6b6b', '#ffa94d', '#51cf66', '#339af0', '#e64980', '#20c997']
 
 function getKdBarHeight(item) {
   let n = item.numeric != null ? Number(item.numeric) : null
@@ -171,7 +171,7 @@ function getKdBarHeight(item) {
 
 const getCategoryColor = (category) => {
   const colors = {
-    '核心观点': '#667eea',
+    '核心观点': '#3a9fd8',
     '关键数据': '#ff6b6b',
     '方法建议': '#ffa94d',
     '结论总结': '#51cf66',
@@ -226,7 +226,7 @@ function cleanValue(str) {
 .section-title {
   font-size: 20px;
   font-weight: 700;
-  color: #2c3e50;
+  color: #3a3630;
 }
 
 .stats-grid {
@@ -237,12 +237,12 @@ function cleanValue(str) {
 }
 
 .stat-card {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
   color: white;
   border-radius: 12px;
   padding: 20px;
   text-align: center;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 12px rgba(58, 159, 216, 0.25);
   transition: all 0.3s ease;
   animation: scaleIn 0.5s ease;
 }
@@ -260,7 +260,7 @@ function cleanValue(str) {
 
 .stat-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 8px 20px rgba(58, 159, 216, 0.35);
 }
 
 .stat-icon {
@@ -287,7 +287,7 @@ function cleanValue(str) {
 .subsection-title {
   font-size: 16px;
   font-weight: 600;
-  color: #2c3e50;
+  color: #e2e8f0;
   margin-bottom: 16px;
 }
 
@@ -320,18 +320,18 @@ function cleanValue(str) {
 }
 
 .category-name {
-  color: #2c3e50;
+  color: #e2e8f0;
   font-weight: 500;
 }
 
 .category-count {
-  color: #667eea;
+  color: #3a9fd8;
   font-weight: 700;
 }
 
 .category-bar {
   height: 8px;
-  background: #f0f0f0;
+  background: #e0d8cb;
   border-radius: 4px;
   overflow: hidden;
 }
@@ -351,13 +351,14 @@ function cleanValue(str) {
 .keyword-tag {
   display: inline-block;
   padding: 8px 16px;
-  background: linear-gradient(135deg, #f9fafb 0%, #e3e8f0 100%);
-  color: #2c3e50;
+  background: linear-gradient(135deg, #f5f1ea 0%, #f5f0e8 100%);
+  color: #495057;
   border-radius: 20px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.3s ease;
   animation: popIn 0.5s ease;
+  border: 1px solid #d5cabb;
 }
 
 @keyframes popIn {
@@ -375,10 +376,10 @@ function cleanValue(str) {
 }
 
 .keyword-tag:hover {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
   color: white;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 12px rgba(58, 159, 216, 0.25);
 }
 
 .key-data-chart {
@@ -386,10 +387,10 @@ function cleanValue(str) {
 }
 
 .kd-chart-container {
-  background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);
+  background: linear-gradient(135deg, #f5f1ea 0%, #ffffff 100%);
   border-radius: 12px;
   padding: 20px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #d5cabb;
 }
 
 .kd-chart-bars {
@@ -413,7 +414,7 @@ function cleanValue(str) {
 .kd-bar-value {
   font-size: 11px;
   font-weight: 700;
-  color: #667eea;
+  color: #3a9fd8;
   white-space: nowrap;
   text-align: center;
 }
@@ -422,7 +423,7 @@ function cleanValue(str) {
   flex: 1;
   width: 100%;
   max-width: 48px;
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(58, 159, 216, 0.06);
   border-radius: 6px 6px 0 0;
   display: flex;
   align-items: flex-end;
@@ -443,7 +444,7 @@ function cleanValue(str) {
 
 .kd-bar-label {
   font-size: 10px;
-  color: #6b7280;
+  color: #8a7e72;
   text-align: center;
   max-width: 60px;
   overflow: hidden;

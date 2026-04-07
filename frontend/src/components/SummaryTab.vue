@@ -131,7 +131,7 @@ const conclusions = computed(() => {
 .section-title {
   font-size: 20px;
   font-weight: 700;
-  color: #2c3e50;
+  color: #3a3630;
 }
 
 .summary-sections {
@@ -141,10 +141,10 @@ const conclusions = computed(() => {
 }
 
 .summary-section {
-  background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);
+  background: linear-gradient(135deg, #f5f1ea 0%, #ffffff 100%);
   border-radius: 12px;
   padding: 20px;
-  border-left: 4px solid #667eea;
+  border-left: 4px solid #3a9fd8;
   animation: slideInUp 0.5s ease;
 }
 
@@ -173,12 +173,12 @@ const conclusions = computed(() => {
 .section-subtitle {
   font-size: 18px;
   font-weight: 600;
-  color: #2c3e50;
+  color: #3a3630;
 }
 
 .section-content {
   font-size: 14px;
-  color: #2c3e50;
+  color: #495057;
   line-height: 1.8;
 }
 
@@ -189,8 +189,8 @@ const conclusions = computed(() => {
 }
 
 .data-card {
-  background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
-  border: 1px solid #667eea30;
+  background: linear-gradient(135deg, rgba(58,159,216,0.08) 0%, rgba(58,159,216,0.04) 100%);
+  border: 1px solid rgba(58,159,216,0.15);
   border-radius: 10px;
   padding: 16px 14px;
   text-align: center;
@@ -199,13 +199,13 @@ const conclusions = computed(() => {
 
 .data-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+  box-shadow: 0 4px 12px rgba(58, 159, 216, 0.1);
 }
 
 .data-value {
   font-size: 22px;
   font-weight: 700;
-  color: #667eea;
+  color: #3a9fd8;
   margin-bottom: 4px;
   word-break: break-all;
 }
@@ -213,19 +213,19 @@ const conclusions = computed(() => {
 .data-label {
   font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: #495057;
   margin-bottom: 4px;
 }
 
 .data-context {
   font-size: 11px;
-  color: #7f8c8d;
+  color: #8a7e72;
   line-height: 1.4;
 }
 
 .data-page {
   font-size: 10px;
-  color: #a0aec0;
+  color: #b0a494;
   margin-top: 4px;
 }
 
@@ -242,7 +242,7 @@ const conclusions = computed(() => {
 }
 
 .item-bullet {
-  color: #667eea;
+  color: #3a9fd8;
   font-weight: 700;
   font-size: 18px;
   line-height: 1.5;
@@ -254,7 +254,7 @@ const conclusions = computed(() => {
 }
 
 .empty-state {
-  color: #7f8c8d;
+  color: #8a7e72;
   font-style: italic;
   text-align: center;
   padding: 20px;

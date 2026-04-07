@@ -1,24 +1,28 @@
-# AnnoPaper智阅
+<div align="center">
+  <img src="images/AnnoPaper.png" alt="AnnoPaper智阅" width="180" />
+  <h1>AnnoPaper智阅</h1>
+  <p>
+    <a href="README_EN.md"><img src="https://img.shields.io/badge/Language-English-blue?logo=googletranslate&logoColor=white" alt="English" /></a>
+    <a href="backend/requirements.txt"><img src="https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white" alt="Python" /></a>
+    <a href="backend/app.py"><img src="https://img.shields.io/badge/Flask-Backend-000000?logo=flask&logoColor=white" alt="Flask" /></a>
+    <a href="frontend/package.json"><img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white" alt="Vue 3" /></a>
+    <a href="frontend/package.json"><img src="https://img.shields.io/badge/Node.js-16%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js" /></a>
+    <a href="https://platform.deepseek.com/"><img src="https://img.shields.io/badge/DeepSeek--R1-LLM-6C47FF?logo=openai&logoColor=white" alt="DeepSeek-R1" /></a>
+    <img src="https://img.shields.io/badge/Version-v3.0.0-orange.svg" alt="Version" />
+    <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
+  </p>
+  <p><strong>基于 Vue 3 + Flask + Docling 结构化解析 + 多模型 LLM 引擎的 AI 文档深度分析与物理标注系统</strong></p>
+  <p>📚 Docling 驱动文档结构化解析 · 🎯 字符级精准坐标定位标注 · 🧠 多模型 AI 深度分析 · 📄 PDF/DOCX/HTML/URL 全格式支持</p>
+</div>
 
-<p align="center">
-  <a href="README_EN.md"><img src="https://img.shields.io/badge/Language-English-blue?logo=googletranslate&logoColor=white" alt="English" /></a>
-  <a href="backend/requirements.txt"><img src="https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white" alt="Python" /></a>
-  <a href="backend/app.py"><img src="https://img.shields.io/badge/Flask-Backend-000000?logo=flask&logoColor=white" alt="Flask" /></a>
-  <a href="frontend/package.json"><img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white" alt="Vue 3" /></a>
-  <a href="frontend/package.json"><img src="https://img.shields.io/badge/Node.js-16%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js" /></a>
-  <a href="https://platform.deepseek.com/"><img src="https://img.shields.io/badge/DeepSeek--R1-LLM-6C47FF?logo=openai&logoColor=white" alt="DeepSeek-R1" /></a>
-  <img src="https://img.shields.io/badge/Version-v3.0.0-orange.svg" alt="Version" />
-  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
-</p>
-
-> 基于 Vue 3 + Flask + DeepSeek-R1 / Qwen3.6-Plus / PipeLLM 多模型引擎的 AI 文档深度分析与物理标注系统
+> 💡 **Docling** 作为本项目的**核心文档解析引擎**，提供了高级文档结构化提取能力（支持 OCR），能够智能识别表格、图片、公式等复杂元素，并自动输出结构化内容，显著提升了对复杂学术论文和报告的解析精度。当 Docling 不可用时，系统自动降级到 PyMuPDF 基础解析，确保服务弹性。
 
 ---
 
 ## 技术栈
 
 ### 整体架构示意图
-![alt text](image.png)
+![AnnoPaper 架构图](images/architecture.png)
 
 ### 前端
 | 技术 | 用途 |

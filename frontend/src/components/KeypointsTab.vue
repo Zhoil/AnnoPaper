@@ -153,13 +153,13 @@ const getRankClass = (index) => {
   justify-content: space-between;
   align-items: center;
   padding-bottom: 16px;
-  border-bottom: 2px solid #e9ecef;
+  border-bottom: 2px solid #d5cabb;
 }
 
 .section-title {
   font-size: 22px;
   font-weight: 700;
-  color: #2c3e50;
+  color: #3a3630;
   margin: 0;
   display: flex;
   align-items: center;
@@ -173,13 +173,13 @@ const getRankClass = (index) => {
 
 .stat-badge {
   padding: 6px 14px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
   color: white;
   border-radius: 20px;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.5px;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 2px 8px rgba(58, 159, 216, 0.25);
 }
 
 .keypoints-list {
@@ -189,13 +189,13 @@ const getRankClass = (index) => {
 }
 
 .keypoint-card {
-  background: white;
+  background: #ffffff;
   border-radius: 16px;
   padding: 20px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 2px solid #f1f3f5;
+  border: 1px solid #d5cabb;
   animation: slideInRight 0.5s ease;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 12px rgba(192, 144, 96, 0.06);
   position: relative;
   overflow: hidden;
 }
@@ -207,7 +207,7 @@ const getRankClass = (index) => {
   left: 0;
   width: 4px;
   height: 100%;
-  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(180deg, #6db8e3 0%, #3a9fd8 100%);
   transform: scaleY(0);
   transition: transform 0.3s ease;
 }
@@ -228,8 +228,8 @@ const getRankClass = (index) => {
 
 .keypoint-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
-  border-color: #667eea;
+  box-shadow: 0 12px 28px rgba(192, 144, 96, 0.1);
+  border-color: #3a9fd8;
 }
 
 .card-top {
@@ -245,14 +245,15 @@ const getRankClass = (index) => {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  background: linear-gradient(135deg, #f5f0e8 0%, #ede6da 100%);
   border-radius: 20px;
   font-weight: 700;
+  color: #8a7e72;
 }
 
 .rank-first {
   background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
-  color: #000;
+  color: #1a1a1a;
   box-shadow: 0 2px 12px rgba(255, 215, 0, 0.4);
   animation: pulse 2s infinite;
 }
@@ -310,7 +311,7 @@ const getRankClass = (index) => {
 .point-text {
   font-size: 15px;
   line-height: 1.8;
-  color: #2c3e50;
+  color: #3a3630;
   margin: 0;
   font-weight: 500;
   word-break: break-word;
@@ -323,7 +324,7 @@ const getRankClass = (index) => {
   gap: 8px;
   padding: 8px 12px;
   margin: 8px 0;
-  background: #f8f9fa;
+  background: rgba(58, 159, 216, 0.04);
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -331,12 +332,12 @@ const getRankClass = (index) => {
 }
 
 .evidence-toggle:hover {
-  background: #e9ecef;
+  background: rgba(58, 159, 216, 0.08);
 }
 
 .toggle-icon {
   font-size: 12px;
-  color: #667eea;
+  color: #3a9fd8;
   transition: transform 0.3s ease;
   display: inline-block;
 }
@@ -347,7 +348,7 @@ const getRankClass = (index) => {
 
 .toggle-text {
   font-size: 13px;
-  color: #667eea;
+  color: #3a9fd8;
   font-weight: 600;
 }
 
@@ -444,7 +445,7 @@ const getRankClass = (index) => {
 
 .importance-bar-label {
   font-size: 12px;
-  color: #7f8c8d;
+  color: #8a7e72;
   font-weight: 600;
   min-width: 50px;
 }
@@ -452,15 +453,15 @@ const getRankClass = (index) => {
 .importance-bar {
   flex: 1;
   height: 12px;
-  background: linear-gradient(90deg, #f0f0f0 0%, #e0e0e0 100%);
+  background: rgba(58, 159, 216, 0.06);
   border-radius: 20px;
   overflow: hidden;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
+  box-shadow: inset 0 2px 4px rgba(192, 144, 96, 0.08);
 }
 
 .importance-fill {
   height: 100%;
-  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(90deg, #6db8e3 0%, #3a9fd8 100%);
   border-radius: 20px;
   transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
