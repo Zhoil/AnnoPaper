@@ -2,7 +2,9 @@
   <img src="images/AnnoPaper.png" alt="AnnoPaper智阅" width="180" />
   <h1>AnnoPaper智阅</h1>
   <p>
-    <a href="README_EN.md"><img src="https://img.shields.io/badge/Language-English-blue?logo=googletranslate&logoColor=white" alt="English" /></a>
+    <a href="README_EN.md">English</a> | <a href="README.md">中文文档</a>
+  </p>
+  <p>
     <a href="backend/requirements.txt"><img src="https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white" alt="Python" /></a>
     <a href="backend/app.py"><img src="https://img.shields.io/badge/Flask-Backend-000000?logo=flask&logoColor=white" alt="Flask" /></a>
     <a href="frontend/package.json"><img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white" alt="Vue 3" /></a>
