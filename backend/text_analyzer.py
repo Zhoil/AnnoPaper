@@ -214,6 +214,10 @@ class TextAnalyzer:
             if filepath.lower().endswith('.pdf'):
                 pdf_path = filepath
         
+        total = len(llm_keypoints)
+        matched_count = 0
+        method_stats = {}
+
         for idx, llm_kp in enumerate(llm_keypoints):
             kp_content = llm_kp.get('content', '')
             kp_page = llm_kp.get('page')  # 获取页码提示
@@ -226,7 +230,18 @@ class TextAnalyzer:
             if pdf_path and kp_page:
                 pdf_location = self._locate_text_in_pdf(pdf_path, kp_content, kp_page)
                 if pdf_location:
-                    matched_text = kp_content
+                    # pdf_location 命中，但仍尝试在提取文本中找到对应文本（供前端预览高亮）
+                    if kp_content in text:
+                        matched_text = kp_content
+                    else:
+                        # 尝试归一化后匹配
+                        norm_kp = self._normalize_for_search(kp_content)
+                        norm_text = self._normalize_for_search(text)
+                        if norm_kp in norm_text:
+                            # 找到归一化后的位置，但使用原始 LLM 文本
+                            matched_text = kp_content
+                        else:
+                            matched_text = kp_content
                     match_method = 'pdf_location'
             
             # 方法2：精确匹配 - 直接在原文中查找
@@ -234,11 +249,22 @@ class TextAnalyzer:
                 matched_text = kp_content
                 match_method = 'exact'
             
-            # 方法3：模糊匹配 - 找到最相似的句子
+            # 方法3：归一化匹配 - 尝试归一化后匹配
+            if not matched_text:
+                norm_kp = self._normalize_for_search(kp_content)
+                norm_text = self._normalize_for_search(text)
+                if norm_kp in norm_text:
+                    matched_text = kp_content
+                    match_method = 'normalized'
+
+            # 方法4：模糊匹配 - 找到最相似的句子
             if not matched_text:
                 matched_text, match_method = self._fuzzy_match_sentence(kp_content, sentences)
             
             if matched_text:
+                matched_count += 1
+                method_stats[match_method] = method_stats.get(match_method, 0) + 1
+
                 # 使用传入的 annotation
                 final_annotation = llm_kp.get('annotation', '')
                 
@@ -267,6 +293,9 @@ class TextAnalyzer:
                 }
                 matched_keypoints.append(keypoint)
         
+        # 详细匹配统计日志
+        print(f"  📊 关键点匹配: {matched_count}/{total} 命中，方法分布: {method_stats}")
+
         # 按重要性排序
         matched_keypoints.sort(key=lambda x: x['importance'], reverse=True)
         
@@ -384,22 +413,40 @@ class TextAnalyzer:
         }
     
     def _generate_highlights(self, text, keypoints):
-        """生成高亮标注元数据"""
+        """生成高亮标注元数据（增强版：所有关键点都保留，携带 page 信息）"""
         highlights = []
+        dropped = 0
         for kp in keypoints:
             content = kp['content']
             start_pos = text.find(content)
-            if start_pos != -1:
-                highlights.append({
-                    'id': kp['id'],
-                    'start': start_pos,
-                    'end': start_pos + len(content),
-                    'text': content,
-                    'color': kp['color'],
-                    'importance': kp['importance'],
-                    'annotation': kp['annotation'],
-                    'category': kp['category']
-                })
+
+            # 如果精确匹配失败，尝试用 llm_content
+            hl_text = content
+            if start_pos == -1 and kp.get('llm_content'):
+                start_pos = text.find(kp['llm_content'])
+                if start_pos != -1:
+                    hl_text = kp['llm_content']
+
+            # 即使在提取文本中找不到，也保留到 highlights
+            # 因为 annotate_pdf 有自己的9级搜索策略，可能仍然能定位
+            if start_pos == -1:
+                start_pos = 0  # 回退位置（仅影响前端预览，不影响 PDF 标注）
+                dropped += 1
+
+            highlights.append({
+                'id': kp['id'],
+                'start': start_pos,
+                'end': start_pos + len(hl_text),
+                'text': hl_text,
+                'color': kp['color'],
+                'importance': kp['importance'],
+                'annotation': kp['annotation'],
+                'category': kp['category'],
+                'page': kp.get('page'),  # 传递页码给 annotate_pdf 作为 page_hint
+            })
+
+        if dropped:
+            print(f"  ⚠️ _generate_highlights: {dropped}/{len(keypoints)} 个关键点在提取文本中未找到，已保留交由 PDF 标注引擎处理")
         return highlights
 
     def annotate_docx(self, input_path, highlights, output_path):

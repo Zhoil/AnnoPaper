@@ -402,7 +402,7 @@ def compare_documents():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """AI 对话接口（固定使用 DeepSeek-R1）"""
+    """AI 对话接口（使用 CHAT_PROVIDER 配置的模型）"""
     try:
         data = request.json
         message = data.get('message', '').strip()

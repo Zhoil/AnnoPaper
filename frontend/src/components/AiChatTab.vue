@@ -6,7 +6,7 @@
         <span class="chat-model-icon">🤖</span>
         <div>
           <div class="chat-title">AI 助手</div>
-          <div class="chat-subtitle">DeepSeek-R1 驱动 · 联动当前页面</div>
+          <div class="chat-subtitle">DeepSeek-V4 驱动 · 联动当前页面</div>
         </div>
       </div>
       <button class="clear-btn" @click="clearChat" title="清空对话">

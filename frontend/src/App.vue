@@ -83,9 +83,9 @@
                     <span class="feature-icon">🧠</span>
                   </div>
                   <h3 class="feature-title">多模型 AI 分析</h3>
-                  <p class="feature-desc">接入 DeepSeek-R1 深度推理、Qwen3.5-Plus 快速响应与第三方多引擎模型，精准理解文章语义，自动归纳核心论点</p>
+                  <p class="feature-desc">接入 DeepSeek-V4 深度推理、Qwen3.5-Plus 快速响应与第三方多引擎模型，精准理解文章语义，自动归纳核心论点</p>
                   <ul class="feature-list">
-                    <li>DeepSeek-R1 深度推理</li>
+                    <li>DeepSeek-V4 深度推理</li>
                     <li>Qwen3.5-Plus 快速分析</li>
                     <li>多选择引擎模型与结构化要点输出</li>
                   </ul>

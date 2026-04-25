@@ -14,10 +14,10 @@
             class="api-btn"
             :class="{ active: documentStore.apiProvider === 'deepseek' }"
             @click="documentStore.setApiProvider('deepseek')"
-            title="DeepSeek-R1：推理能力更强"
+            title="DeepSeek-V4：推理能力更强"
           >
             <span class="api-icon">🧠</span>
-            DeepSeek-R1
+            DeepSeek-V4
           </button>
           <button
             class="api-btn"

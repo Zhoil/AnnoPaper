@@ -52,6 +52,9 @@ class LLMService:
             'display_name': os.environ.get(f'{prefix}_DISPLAY_NAME', provider),
             'supports_json_format': os.environ.get(f'{prefix}_SUPPORTS_JSON', '').lower() == 'true',
             'supports_file_upload': os.environ.get(f'{prefix}_SUPPORTS_FILE_UPLOAD', '').lower() == 'true',
+            # DeepSeek V4 思考模式配置
+            'thinking': os.environ.get(f'{prefix}_THINKING', ''),
+            'reasoning_effort': os.environ.get(f'{prefix}_REASONING_EFFORT', ''),
         }
 
     def get_available_providers(self) -> List[Dict]:
@@ -79,11 +82,59 @@ class LLMService:
             'chat_provider': self.chat_provider
         }
 
+    def _apply_thinking_params(self, data: dict, config: dict):
+        """
+        为支持思考模式的 provider 添加 thinking / reasoning_effort 参数
+        仅当 .env 中配置了 THINKING 字段时才激活（对其他 provider 无影响）
+        """
+        thinking_mode = config.get('thinking', '')
+        if not thinking_mode:
+            return
+
+        # 添加 thinking 参数
+        data['thinking'] = {'type': thinking_mode}
+
+        # 添加 reasoning_effort 参数
+        effort = config.get('reasoning_effort', 'high')
+        if effort:
+            data['reasoning_effort'] = effort
+
+        # 思考模式下 temperature 等参数不生效，但为兼容不会报错，保留即可
+        print(f"  🧠 思考模式: {thinking_mode}, 强度: {effort}")
+
+    def _extract_content(self, result: dict) -> Optional[str]:
+        """
+        从 API 响应中提取 content，兼容 DeepSeek V4 的 reasoning_content 字段
+        思维链内容仅用于日志输出，不影响最终返回
+        """
+        try:
+            message = result['choices'][0]['message']
+            reasoning = message.get('reasoning_content', '')
+            content = message.get('content', '')
+
+            if reasoning:
+                # 截取前100字方便调试查看
+                preview = reasoning[:100].replace('\n', ' ')
+                print(f"  💭 思维链预览: {preview}...")
+
+            # 清理 V4 可能泄漏到 content 中的 <think> 标签
+            if content and '<think>' in content:
+                import re as _re
+                cleaned = _re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+                if cleaned:
+                    print(f"  🧹 已清理 content 中的 <think> 标签 ({len(content)}→{len(cleaned)} 字符)")
+                    content = cleaned
+
+            return content
+        except (KeyError, IndexError) as e:
+            print(f"  ⚠️ 解析响应失败: {str(e)}")
+            return None
+
     def _build_system_prompt(self, provider: str) -> str:
         """根据提供商构建系统提示词"""
         config = self._get_provider_config(provider)
 
-        model_ref = config.get('display_name', 'DeepSeek-R1')
+        model_ref = config.get('display_name', 'DeepSeek-V4-Pro')
 
         prompt = f'''你是一个顶尖的文献情报分析专家（{model_ref}），专精于从学术论文、技术文档和深度报道中提取核心洞见。
 
@@ -341,6 +392,9 @@ class LLMService:
             'temperature': 0.7
         }
 
+        # DeepSeek V4 思考模式参数
+        self._apply_thinking_params(data, config)
+
         try:
             response = requests.post(
                 config['api_url'],
@@ -351,7 +405,7 @@ class LLMService:
 
             if response.status_code == 200:
                 result = response.json()
-                return result['choices'][0]['message']['content']
+                return self._extract_content(result)
             else:
                 print(f"Chat API 错误: {response.status_code}, {response.text}")
                 return None
@@ -433,6 +487,9 @@ class LLMService:
             'temperature': 1.0
         }
 
+        # DeepSeek V4 思考模式参数
+        self._apply_thinking_params(data, config)
+
         if config.get('supports_json_format'):
             data['response_format'] = {'type': 'json_object'}
 
@@ -446,7 +503,7 @@ class LLMService:
 
             if response.status_code == 200:
                 result = response.json()
-                return result['choices'][0]['message']['content']
+                return self._extract_content(result)
             else:
                 print(f"  文件分析 API 错误: {response.status_code}, {response.text[:300]}")
                 return None
@@ -676,6 +733,9 @@ class LLMService:
             'temperature': 1.0
         }
 
+        # DeepSeek V4 思考模式参数
+        self._apply_thinking_params(data, config)
+
         if config.get('supports_json_format'):
             data['response_format'] = {'type': 'json_object'}
 
@@ -689,7 +749,7 @@ class LLMService:
 
             if response.status_code == 200:
                 result = response.json()
-                return result['choices'][0]['message']['content']
+                return self._extract_content(result)
             else:
                 print(f"API 错误: 状态码={response.status_code}, 响应={response.text}")
                 return None
@@ -701,21 +761,44 @@ class LLMService:
             return None
 
     def _parse_llm_response(self, response: str) -> Optional[Dict]:
-        """解析大模型返回的 JSON 结果"""
+        """解析大模型返回的 JSON 结果（增强版：容忍 V4 思考模式可能的混合输出）"""
         try:
             response = response.strip()
+
+            # 清理可能残留的 <think> 标签
+            if '<think>' in response:
+                response = re.sub(r'<think>[\s\S]*?</think>', '', response).strip()
+
+            # 移除 markdown 代码块包装
             if response.startswith('```json'):
                 response = response[7:]
             elif response.startswith('```'):
                 response = response[3:]
-
             if response.endswith('```'):
                 response = response[:-3]
-
             response = response.strip()
-            result = json.loads(response)
+
+            # 尝试直接解析
+            try:
+                result = json.loads(response)
+            except json.JSONDecodeError:
+                # 降级：在文本中搜索第一个完整的 JSON 对象
+                match = re.search(r'\{[\s\S]*\}', response)
+                if match:
+                    try:
+                        result = json.loads(match.group())
+                        print(f"  🔧 从混合文本中提取到 JSON（偏移 {match.start()} 字符）")
+                    except json.JSONDecodeError:
+                        print(f"解析大模型返回结果失败: 无法提取有效 JSON")
+                        print(f"原始响应内容: {response[:500]}")
+                        return None
+                else:
+                    print(f"解析大模型返回结果失败: 未找到 JSON 结构")
+                    print(f"原始响应内容: {response[:500]}")
+                    return None
 
             if 'core_arguments' in result and isinstance(result['core_arguments'], list):
+                print(f"  ✅ 解析成功：{len(result['core_arguments'])} 个核心论点")
                 return result
 
             # 兼容旧版本结构
@@ -732,7 +815,7 @@ class LLMService:
 
         except json.JSONDecodeError as e:
             print(f"解析大模型返回结果失败: {str(e)}")
-            print(f"原始响应内容: {response}")
+            print(f"原始响应内容: {response[:500]}")
             return None
 
     def analyze_images(self, image_infos: list, provider: str = 'deepseek',
