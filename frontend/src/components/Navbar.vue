@@ -14,25 +14,25 @@
             class="api-btn"
             :class="{ active: documentStore.apiProvider === 'deepseek' }"
             @click="documentStore.setApiProvider('deepseek')"
-            title="DeepSeek-R1：推理能力更强"
+            title="DeepSeek-V4：推理能力更强"
           >
             <span class="api-icon">🧠</span>
-            DeepSeek-R1
+            DeepSeek-V4
           </button>
           <button
             class="api-btn"
             :class="{ active: documentStore.apiProvider === 'qwen' }"
             @click="documentStore.setApiProvider('qwen')"
-            title="Qwen3.5-Plus：速度更快"
+            title="Qwen3.6-Plus：速度更快"
           >
             <span class="api-icon">⚡</span>
-            Qwen3.5+
+            Qwen3.6+
           </button>
           <button
             class="api-btn"
             :class="{ active: documentStore.apiProvider === 'pipellm' }"
             @click="selectPipeLLM"
-            title="PipeLLM：第三方多模型"
+            title="PipeLLM：第三方多模型，内置GPT、Claude"
           >
             <span class="api-icon">🌐</span>
             PipeLLM
@@ -86,7 +86,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useDocumentStore } from '../stores/document'
 import { useToast } from '../composables/useToast.js'
 
-const emit = defineEmits(['show-upload', 'show-history'])
+const emit = defineEmits(['show-upload', 'show-history', 'show-compare'])
 const documentStore = useDocumentStore()
 const showDropdown = ref(false)
 const toast = useToast()
@@ -140,7 +140,7 @@ const handleExport = async () => {
 }
 
 const handleCompare = () => {
-  toast.info('文档对比功能：请先从历史记录中选择多个文档进行对比')
+  emit('show-compare')
   showDropdown.value = false
 }
 

@@ -962,17 +962,6 @@ watch([fullscreen, treePoints], async () => {
   border-color: transparent;
 }
 
-.logic-render-wrapper {
-  width: 100%;
-  min-height: 200px;
-  max-height: 600px;
-  overflow: auto;
-  padding: 12px;
-  background: #ffffff;
-  border-radius: 10px;
-  border: 1px solid #f0e6d6;
-}
-
 /* ── 论证链路：SVG 关系图容器 ── */
 .logic-graph {
   position: relative;

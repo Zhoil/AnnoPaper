@@ -1,10 +1,12 @@
 import os
 import re
 import json
+import time
 import requests
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
 
+from llm_stats import record_llm_call, extract_usage
 from prompts import (
     build_analyze_system_prompt,
     build_file_user_prompt,
@@ -270,6 +272,7 @@ class LLMService:
         # DeepSeek V4 思考模式参数
         self._apply_thinking_params(data, config)
 
+        _t0 = time.perf_counter()
         try:
             response = requests.post(
                 config['api_url'],
@@ -277,17 +280,61 @@ class LLMService:
                 json=data,
                 timeout=config['timeout']
             )
+            _latency = int((time.perf_counter() - _t0) * 1000)
 
             if response.status_code == 200:
                 result = response.json()
-                return self._extract_content(result)
+                content = self._extract_content(result)
+                _usage = extract_usage(result)
+                record_llm_call(
+                    provider=config.get('provider', ''),
+                    model=config.get('model', ''),
+                    call_type='chat',
+                    latency_ms=_latency,
+                    prompt_tokens=_usage['prompt_tokens'],
+                    completion_tokens=_usage['completion_tokens'],
+                    total_tokens=_usage['total_tokens'],
+                    status='success',
+                    input_chars=len(message),
+                    output_chars=len(content) if content else 0,
+                )
+                return content
             else:
+                record_llm_call(
+                    provider=config.get('provider', ''),
+                    model=config.get('model', ''),
+                    call_type='chat',
+                    latency_ms=_latency,
+                    status='error',
+                    input_chars=len(message),
+                    error_message=f'HTTP {response.status_code}',
+                )
                 print(f"Chat API 错误: {response.status_code}, {response.text}")
                 return None
         except requests.exceptions.Timeout:
+            _latency = int((time.perf_counter() - _t0) * 1000)
+            record_llm_call(
+                provider=config.get('provider', ''),
+                model=config.get('model', ''),
+                call_type='chat',
+                latency_ms=_latency,
+                status='timeout',
+                input_chars=len(message),
+                error_message='timeout',
+            )
             print("Chat 请求超时")
             return None
         except Exception as e:
+            _latency = int((time.perf_counter() - _t0) * 1000)
+            record_llm_call(
+                provider=config.get('provider', ''),
+                model=config.get('model', ''),
+                call_type='chat',
+                latency_ms=_latency,
+                status='error',
+                input_chars=len(message),
+                error_message=str(e)[:200],
+            )
             print(f"Chat 错误: {str(e)}")
             return None
 
@@ -368,6 +415,7 @@ class LLMService:
         if config.get('supports_json_format'):
             data['response_format'] = {'type': 'json_object'}
 
+        _t0 = time.perf_counter()
         try:
             response = requests.post(
                 config['api_url'],
@@ -375,17 +423,61 @@ class LLMService:
                 json=data,
                 timeout=config.get('timeout', 120)
             )
+            _latency = int((time.perf_counter() - _t0) * 1000)
 
             if response.status_code == 200:
                 result = response.json()
-                return self._extract_content(result)
+                content = self._extract_content(result)
+                _usage = extract_usage(result)
+                record_llm_call(
+                    provider=config.get('provider', ''),
+                    model=model,
+                    call_type='file_upload',
+                    latency_ms=_latency,
+                    prompt_tokens=_usage['prompt_tokens'],
+                    completion_tokens=_usage['completion_tokens'],
+                    total_tokens=_usage['total_tokens'],
+                    status='success',
+                    input_chars=len(user_prompt),
+                    output_chars=len(content) if content else 0,
+                )
+                return content
             else:
+                record_llm_call(
+                    provider=config.get('provider', ''),
+                    model=model,
+                    call_type='file_upload',
+                    latency_ms=_latency,
+                    status='error',
+                    input_chars=len(user_prompt),
+                    error_message=f'HTTP {response.status_code}',
+                )
                 print(f"  文件分析 API 错误: {response.status_code}, {response.text[:300]}")
                 return None
         except requests.exceptions.Timeout:
+            _latency = int((time.perf_counter() - _t0) * 1000)
+            record_llm_call(
+                provider=config.get('provider', ''),
+                model=model,
+                call_type='file_upload',
+                latency_ms=_latency,
+                status='timeout',
+                input_chars=len(user_prompt),
+                error_message='timeout',
+            )
             print(f"  文件分析请求超时 ({config.get('timeout', 120)}s)")
             return None
         except Exception as e:
+            _latency = int((time.perf_counter() - _t0) * 1000)
+            record_llm_call(
+                provider=config.get('provider', ''),
+                model=model,
+                call_type='file_upload',
+                latency_ms=_latency,
+                status='error',
+                input_chars=len(user_prompt),
+                error_message=str(e)[:200],
+            )
             print(f"  文件分析异常: {str(e)}")
             return None
 
@@ -511,7 +603,7 @@ class LLMService:
             print(f"  🔍 分析第 {chunk_idx}/{total_chunks} 块 ({len(chunk)} 字符)...")
 
             user_content = self._build_chunk_prompt(chunk, chunk_idx, total_chunks, file_name)
-            response = self._call_api(user_content, system_prompt, config)
+            response = self._call_api(user_content, system_prompt, config, call_type='chunk')
 
             if response:
                 result = self._parse_llm_response(response)
@@ -541,7 +633,7 @@ class LLMService:
         if image_descriptions:
             merge_content += f"\n\n【图片分析结果】\n{image_descriptions}"
 
-        merge_response = self._call_api(merge_content, system_prompt, config)
+        merge_response = self._call_api(merge_content, system_prompt, config, call_type='merge')
         if merge_response:
             final_result = self._parse_llm_response(merge_response)
             if final_result:
@@ -570,7 +662,8 @@ class LLMService:
             'title': chunk_results[0].get('title', '')
         }
 
-    def _call_api(self, user_content: str, system_prompt: str, config: dict) -> Optional[str]:
+    def _call_api(self, user_content: str, system_prompt: str, config: dict,
+                  call_type: str = 'analyze') -> Optional[str]:
         """调用指定配置的 API（不再硬截断，由上层控制内容长度）"""
         headers = {
             'Content-Type': 'application/json',
@@ -591,6 +684,7 @@ class LLMService:
         if config.get('supports_json_format'):
             data['response_format'] = {'type': 'json_object'}
 
+        _t0 = time.perf_counter()
         try:
             response = requests.post(
                 config['api_url'],
@@ -598,17 +692,63 @@ class LLMService:
                 json=data,
                 timeout=config.get('timeout', 60)
             )
+            _latency = int((time.perf_counter() - _t0) * 1000)
 
             if response.status_code == 200:
                 result = response.json()
-                return self._extract_content(result)
+                content = self._extract_content(result)
+                # ── 统计埋点 ──
+                _usage = extract_usage(result)
+                record_llm_call(
+                    provider=config.get('provider', ''),
+                    model=config.get('model', ''),
+                    call_type=call_type,
+                    latency_ms=_latency,
+                    prompt_tokens=_usage['prompt_tokens'],
+                    completion_tokens=_usage['completion_tokens'],
+                    total_tokens=_usage['total_tokens'],
+                    status='success',
+                    input_chars=len(user_content),
+                    output_chars=len(content) if content else 0,
+                )
+                return content
             else:
+                _latency = int((time.perf_counter() - _t0) * 1000)
+                record_llm_call(
+                    provider=config.get('provider', ''),
+                    model=config.get('model', ''),
+                    call_type=call_type,
+                    latency_ms=_latency,
+                    status='error',
+                    input_chars=len(user_content),
+                    error_message=f'HTTP {response.status_code}',
+                )
                 print(f"API 错误: 状态码={response.status_code}, 响应={response.text}")
                 return None
         except requests.exceptions.Timeout:
+            _latency = int((time.perf_counter() - _t0) * 1000)
+            record_llm_call(
+                provider=config.get('provider', ''),
+                model=config.get('model', ''),
+                call_type=call_type,
+                latency_ms=_latency,
+                status='timeout',
+                input_chars=len(user_content),
+                error_message='timeout',
+            )
             print(f"请求超时 ({config.get('timeout', 60)}s)：大模型响应过慢，请稍后重试。")
             return None
         except Exception as e:
+            _latency = int((time.perf_counter() - _t0) * 1000)
+            record_llm_call(
+                provider=config.get('provider', ''),
+                model=config.get('model', ''),
+                call_type=call_type,
+                latency_ms=_latency,
+                status='error',
+                input_chars=len(user_content),
+                error_message=str(e)[:200],
+            )
             print(f"请求异常: {str(e)}")
             return None
 
@@ -729,7 +869,8 @@ class LLMService:
             result = self._call_api(
                 media_prompt,
                 MEDIA_SYSTEM_PROMPT,
-                config
+                config,
+                call_type='media'
             )
             if result:
                 print(f"✅ 图片+表格分析完成")

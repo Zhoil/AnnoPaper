@@ -60,7 +60,7 @@ def _call_llm(llm_service, provider: str, user_prompt: str) -> Optional[str]:
             if not cfg.get('api_key'):
                 print('⚠️ 无可用 LLM provider')
                 return None
-        return llm_service._call_api(user_prompt, _RECOMMEND_SYSTEM_PROMPT, cfg)
+        return llm_service._call_api(user_prompt, _RECOMMEND_SYSTEM_PROMPT, cfg, call_type='recommend')
     except Exception as e:
         print(f'⚠️ LLM 调用失败: {e}')
         return None

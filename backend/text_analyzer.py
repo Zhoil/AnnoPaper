@@ -591,6 +591,16 @@ class TextAnalyzer:
         t = re.sub(r'\s+', ' ', t).strip()
         return t
 
+    def _strip_cjk_spaces(self, text):
+        """去除 CJK 字符之间的多余空格（保留拉丁字符间的空格）"""
+        # 去除“CJK字符 + 空格 + CJK字符”中的空格
+        t = re.sub(r'([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef])\s+([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef])', r'\1\2', text)
+        # 去除“CJK字符 + 空格 + 拉丁”中的空格
+        t = re.sub(r'([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef])\s+([a-zA-Z0-9])', r'\1\2', t)
+        # 去除“拉丁 + 空格 + CJK字符”中的空格
+        t = re.sub(r'([a-zA-Z0-9])\s+([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef])', r'\1\2', t)
+        return t
+
     def _detect_pdf_type(self, doc):
         """
         检测 PDF 生成工具类型，用于针对性文本处理策略
@@ -636,6 +646,13 @@ class TextAnalyzer:
                 if quads:
                     return self._apply_highlight(page, quads, color)
 
+            # ── 策略 2.5：去CJK间空格搜索 ──
+            cjk_stripped_text = self._strip_cjk_spaces(norm_text)
+            if cjk_stripped_text != norm_text:
+                quads = page.search_for(cjk_stripped_text, quads=True)
+                if quads:
+                    return self._apply_highlight(page, quads, color)
+
             # ── 策略 3：智能引号/破折号替换 ──
             smart_text = norm_text
             smart_text = smart_text.replace('\u2018', "'").replace('\u2019', "'")
@@ -665,14 +682,21 @@ class TextAnalyzer:
                 if quads:
                     return self._apply_highlight(page, quads, color)
 
-            # ── 策略 6：去空格对齐 ──
+            # ── 策略 6：去CJK间空格对齐 ──
             no_space = re.sub(r'\s', '', norm_query)
             page_no_space = re.sub(r'\s', '', page_text)
             if len(no_space) >= 10 and no_space in page_no_space:
+                # 先尝试去CJK间空格后的文本直接搜索
+                cjk_stripped = self._strip_cjk_spaces(norm_query)
+                if cjk_stripped != norm_query:
+                    quads = page.search_for(cjk_stripped, quads=True)
+                    if quads:
+                        return self._apply_highlight(page, quads, color)
+                # 然后用去空格文本的前缀在页面中搜索
                 for seg_len in [25, 18, 12, 8]:
-                    if seg_len > len(norm_query):
+                    if seg_len > len(cjk_stripped):
                         continue
-                    snippet = norm_query[:seg_len]
+                    snippet = cjk_stripped[:seg_len]
                     quads = page.search_for(snippet, quads=True)
                     if quads:
                         return self._apply_highlight(page, quads, color)
@@ -734,19 +758,50 @@ class TextAnalyzer:
     
     
     def compare_documents(self, records):
-        """比较多个文档"""
+        """比较多个文档的关键词"""
         comparison = {
             'common_keywords': [],
             'unique_keywords': {},
             'similarity': {}
         }
         
-        # 提取每个文档的关键词
+        # 提取每个文档的关键词（兼容新旧数据格式）
         all_keywords = {}
         for record in records:
-            if record and 'analysis_result' in record:
-                keywords = record['analysis_result']['statistics']['top_keywords']
-                all_keywords[record['id']] = set(keywords)
+            if not record:
+                continue
+            keywords = set()
+            # 优先从 summary.top_terms 提取（新版 LLM 分析结果）
+            summary = record.get('summary') or {}
+            top_terms = summary.get('top_terms') or []
+            if top_terms:
+                for t in top_terms:
+                    if isinstance(t, dict):
+                        keywords.add(t.get('term', ''))
+                    elif isinstance(t, str):
+                        keywords.add(t)
+            # 回退到 statistics.top_keywords（旧版）
+            if not keywords:
+                stats = record.get('statistics') or {}
+                top_kw = stats.get('top_keywords') or []
+                if isinstance(top_kw, list):
+                    for kw in top_kw:
+                        if isinstance(kw, dict):
+                            keywords.add(kw.get('word', ''))
+                        elif isinstance(kw, str):
+                            keywords.add(kw)
+            # 再回退到 analysis_result 嵌套结构
+            if not keywords and 'analysis_result' in record:
+                ar = record['analysis_result']
+                ar_stats = ar.get('statistics') or {}
+                for kw in (ar_stats.get('top_keywords') or []):
+                    if isinstance(kw, dict):
+                        keywords.add(kw.get('word', ''))
+                    elif isinstance(kw, str):
+                        keywords.add(kw)
+            keywords.discard('')
+            if keywords:
+                all_keywords[record['id']] = keywords
         
         # 找出共同关键词
         if len(all_keywords) >= 2:
@@ -755,8 +810,8 @@ class TextAnalyzer:
             
             # 找出每个文档的独特关键词
             for record_id, keywords in all_keywords.items():
-                unique = keywords - set(comparison['common_keywords'])
-                comparison['unique_keywords'][record_id] = list(unique)
+                unique = keywords - common
+                comparison['unique_keywords'][str(record_id)] = list(unique)
         
         return comparison
     
@@ -795,8 +850,11 @@ class TextAnalyzer:
             smart = smart.replace('\u2013', '-').replace('\u2014', '-')
             smart = smart.replace('\u00a0', ' ')
 
+            # 去CJK间空格变体
+            cjk_stripped = self._strip_cjk_spaces(norm)
+
             variants = [text_clean]
-            for v in [norm, smart]:
+            for v in [norm, smart, cjk_stripped]:
                 if v not in variants:
                     variants.append(v)
 

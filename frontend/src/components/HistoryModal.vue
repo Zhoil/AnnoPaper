@@ -2,8 +2,21 @@
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-container">
       <div class="modal-header">
-        <h2 class="modal-title">📋 历史记录</h2>
+        <h2 class="modal-title">{{ isCompareMode ? '🔄 选择对比文档' : '📋 历史记录' }}</h2>
         <button class="close-btn" @click="$emit('close')">✕</button>
+      </div>
+
+      <!-- 对比模式提示栏 -->
+      <div v-if="isCompareMode" class="compare-toolbar">
+        <span class="compare-hint">ℹ️ 请勾选 2 篇文档进行对比</span>
+        <span class="compare-count">{{ selectedIds.length }} / 2 已选</span>
+        <button
+          class="compare-start-btn"
+          :disabled="selectedIds.length !== 2"
+          @click="startCompare"
+        >
+          🚀 开始对比
+        </button>
       </div>
       
       <div class="modal-body">
@@ -23,8 +36,20 @@
               v-for="record in history" 
               :key="record.id"
               class="history-item"
+              :class="{ 'item-selected': selectedIds.includes(record.id) }"
             >
-              <div class="item-content" @click="loadRecord(record.id)">
+              <!-- 对比模式复选框 -->
+              <label v-if="isCompareMode" class="compare-checkbox" @click.stop>
+                <input
+                  type="checkbox"
+                  :checked="selectedIds.includes(record.id)"
+                  :disabled="!selectedIds.includes(record.id) && selectedIds.length >= 2"
+                  @change="toggleSelect(record.id)"
+                />
+                <span class="checkmark"></span>
+              </label>
+
+              <div class="item-content" @click="isCompareMode ? toggleSelect(record.id) : loadRecord(record.id)">
                 <div class="item-header">
                   <h4 class="item-title">{{ record.title }}</h4>
                   <span class="item-date">{{ formatDate(record.created_at) }}</span>
@@ -35,7 +60,7 @@
                   <span class="meta-tag">📝 {{ record.word_count }} 字</span>
                 </div>
               </div>
-              <div class="item-actions">
+              <div v-if="!isCompareMode" class="item-actions">
                 <button 
                   class="action-btn export-btn"
                   @click="handleExport(record.id)"
@@ -82,17 +107,45 @@ import { ref, computed, onMounted } from 'vue'
 import { useDocumentStore } from '../stores/document'
 import { useToast } from '../composables/useToast.js'
 
-const emit = defineEmits(['close'])
+const props = defineProps({
+  mode: { type: String, default: 'normal' }  // 'normal' | 'compare'
+})
+
+const emit = defineEmits(['close', 'compare'])
 const documentStore = useDocumentStore()
 const toast = useToast()
 
 const loading = ref(true)
 const currentPage = ref(1)
 const perPage = 10
+const selectedIds = ref([])
 
+const isCompareMode = computed(() => props.mode === 'compare')
 const history = computed(() => documentStore.getHistory)
 const totalRecords = computed(() => documentStore.getHistoryTotal)
 const totalPages = computed(() => Math.ceil(totalRecords.value / perPage))
+
+// 对比模式勾选切换
+const toggleSelect = (id) => {
+  const idx = selectedIds.value.indexOf(id)
+  if (idx >= 0) {
+    selectedIds.value.splice(idx, 1)
+  } else if (selectedIds.value.length < 2) {
+    selectedIds.value.push(id)
+  }
+}
+
+// 发起对比
+const startCompare = async () => {
+  if (selectedIds.value.length !== 2) return
+  try {
+    const result = await documentStore.compareDocuments(selectedIds.value)
+    emit('compare', result)
+    emit('close')
+  } catch (error) {
+    toast.error('文档对比失败：' + (error.response?.data?.error || error.message))
+  }
+}
 
 onMounted(async () => {
   try {
@@ -117,6 +170,10 @@ const goToPage = async (page) => {
 }
 
 const loadRecord = async (recordId) => {
+  if (isCompareMode.value) {
+    toggleSelect(recordId)
+    return
+  }
   try {
     await documentStore.fetchHistoryDetail(recordId)
     emit('close')
@@ -450,5 +507,74 @@ const formatDate = (dateString) => {
 
 .list-leave-active {
   position: absolute;
+}
+
+/* ── 对比模式样式 ── */
+.compare-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 32px;
+  background: rgba(58, 159, 216, 0.08);
+  border-bottom: 1px solid #d5cabb;
+}
+
+.compare-hint {
+  font-size: 14px;
+  color: #3a9fd8;
+  font-weight: 500;
+}
+
+.compare-count {
+  font-size: 13px;
+  color: #8a7e72;
+  margin-left: auto;
+}
+
+.compare-start-btn {
+  padding: 8px 20px;
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
+  color: white;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.compare-start-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.compare-start-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(58, 159, 216, 0.3);
+}
+
+.compare-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.compare-checkbox input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: #3a9fd8;
+  cursor: pointer;
+}
+
+.compare-checkbox input[type="checkbox"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.history-item.item-selected {
+  border-color: #3a9fd8;
+  background: rgba(58, 159, 216, 0.04);
+  box-shadow: 0 0 0 2px rgba(58, 159, 216, 0.15);
 }
 </style>

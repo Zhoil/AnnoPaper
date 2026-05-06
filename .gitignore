@@ -37,7 +37,6 @@ backend/test_doc.*
 backend/backend.log
 
 # Personal documents (do not commit)、
-论文大纲.docx
 
 # Node.js
 node_modules/

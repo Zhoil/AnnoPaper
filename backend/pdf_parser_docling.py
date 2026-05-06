@@ -310,6 +310,33 @@ class DoclingPDFParser:
                     return True
         return False
 
+    def _smart_join(self, texts: List[str]) -> str:
+        """
+        智能合并文本碎片：
+        - 中文/CJK字符之间不加空格
+        - 拉丁字符/数字之间加空格
+        - 中文与拉丁字符之间不加空格（保持原文紧凑）
+        """
+        if not texts:
+            return ''
+        if len(texts) == 1:
+            return texts[0]
+
+        result = texts[0]
+        for i in range(1, len(texts)):
+            prev_char = result[-1] if result else ''
+            next_char = texts[i][0] if texts[i] else ''
+            # 判断是否需要空格：仅当前后都是 ASCII 字母/数字时加空格
+            need_space = (
+                prev_char.isascii() and prev_char.isalnum() and
+                next_char.isascii() and next_char.isalnum()
+            )
+            if need_space:
+                result += ' ' + texts[i]
+            else:
+                result += texts[i]
+        return result
+
     def _merge_text_blocks(self, blocks: List[str]) -> List[str]:
         """
         合并同页的碎片文本块为完整段落。
@@ -335,18 +362,18 @@ class DoclingPDFParser:
             if is_heading:
                 # 先刷出 buffer
                 if buffer:
-                    merged.append(' '.join(buffer))
+                    merged.append(self._smart_join(buffer))
                     buffer = []
                 merged.append(blk)
             elif is_long or ends_sentence:
                 buffer.append(blk)
-                merged.append(' '.join(buffer))
+                merged.append(self._smart_join(buffer))
                 buffer = []
             else:
                 buffer.append(blk)
 
         if buffer:
-            merged.append(' '.join(buffer))
+            merged.append(self._smart_join(buffer))
 
         return merged
 
@@ -373,7 +400,7 @@ class DoclingPDFParser:
 
             if is_heading:
                 if buf_texts:
-                    merged.append((' '.join(buf_texts), buf_bbox, buf_subtype))
+                    merged.append((self._smart_join(buf_texts), buf_bbox, buf_subtype))
                     buf_texts = []
                 merged.append((text, bbox, subtype))
                 buf_bbox = None
@@ -384,7 +411,7 @@ class DoclingPDFParser:
                     buf_bbox = bbox
                 if buf_subtype is None:
                     buf_subtype = subtype
-                merged.append((' '.join(buf_texts), buf_bbox, buf_subtype))
+                merged.append((self._smart_join(buf_texts), buf_bbox, buf_subtype))
                 buf_texts = []
                 buf_bbox = None
                 buf_subtype = None
@@ -396,7 +423,7 @@ class DoclingPDFParser:
                     buf_subtype = subtype
 
         if buf_texts:
-            merged.append((' '.join(buf_texts), buf_bbox or {'x0':0,'y0':0,'x1':0,'y1':0}, buf_subtype or 'TextItem'))
+            merged.append((self._smart_join(buf_texts), buf_bbox or {'x0':0,'y0':0,'x1':0,'y1':0}, buf_subtype or 'TextItem'))
 
         return merged
 

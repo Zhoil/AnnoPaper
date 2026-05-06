@@ -12,6 +12,7 @@
           v-show="navVisible"
           @show-upload="showUploadModal = true"
           @show-history="showHistoryModal = true"
+          @show-compare="showCompareModal = true"
         />
       </Transition>
     </div>
@@ -31,7 +32,7 @@
                   AnnoPaper<span class="title-accent">智阅</span>
                 </h1>
               </div>
-              <p class="hero-desc">基于大语言模型的智能文章分析与物理标注平台<br>上传文档，一键提取关键要点，生成带注释的 PDF</p>
+              <p class="hero-desc">基于大语言模型的智能文章分析与物理标注平台<br>上传文档，一键提取关键要点，生成带注释的PDF</p>
               <div class="hero-actions">
                 <button class="btn-primary" @click="showUploadModal = true">
                   <span>🚀</span> 立即开始分析
@@ -83,10 +84,10 @@
                     <span class="feature-icon">🧠</span>
                   </div>
                   <h3 class="feature-title">多模型 AI 分析</h3>
-                  <p class="feature-desc">接入 DeepSeek-R1 深度推理、Qwen3.5-Plus 快速响应与第三方多引擎模型，精准理解文章语义，自动归纳核心论点</p>
+                  <p class="feature-desc">接入 DeepSeek-V4 深度推理、Qwen3.6-Plus 快速响应与第三方多引擎模型，精准理解文章语义，自动归纳核心论点</p>
                   <ul class="feature-list">
-                    <li>DeepSeek-R1 深度推理</li>
-                    <li>Qwen3.5-Plus 快速分析</li>
+                    <li>DeepSeek-V4 深度推理</li>
+                    <li>Qwen3.6-Plus 快速分析</li>
                     <li>多选择引擎模型与结构化要点输出</li>
                   </ul>
                 </div>
@@ -97,7 +98,7 @@
                     <span class="feature-icon">🎯</span>
                   </div>
                   <h3 class="feature-title">物理坐标级标注</h3>
-                  <p class="feature-desc">基于 PyMuPDF(fitz)、pdfplumber和reportlab 的三库协同文字坐标映射，在原始 PDF 上精确定位并高亮关键句，生成真实可下载的带注释文档</p>
+                  <p class="feature-desc">基于PyMuPDF(fitz)、pdfplumber和reportlab的三库协同文字坐标映射，在原始PDF上精确定位并高亮关键句，生成真实可下载的带注释文档</p>
                   <ul class="feature-list">
                     <li>坐标级精准定位</li>
                     <li>彩色分类高亮</li>
@@ -110,7 +111,7 @@
                     <span class="feature-icon">📁</span>
                   </div>
                   <h3 class="feature-title">多格式全支持</h3>
-                  <p class="feature-desc">支持 PDF、Word（DOCX/DOC）、HTML 文件以及网页 URL，覆盖学术论文、技术报告、新闻资讯等多种场景</p>
+                  <p class="feature-desc">支持PDF、Word（DOCX/DOC）、HTML文件以及网页URL，覆盖学术论文、技术报告、新闻资讯等多种场景</p>
                   <ul class="feature-list">
                     <li>PDF / DOCX / DOC</li>
                     <li>HTML 文件与网页 URL</li>
@@ -197,6 +198,48 @@
 
     <UploadModal v-if="showUploadModal" @close="showUploadModal = false" />
     <HistoryModal v-if="showHistoryModal" @close="showHistoryModal = false" />
+    <HistoryModal
+      v-if="showCompareModal"
+      mode="compare"
+      @close="showCompareModal = false"
+      @compare="handleCompareResult"
+    />
+
+    <!-- 文档对比结果弹窗 -->
+    <Transition name="fade">
+      <div v-if="compareResult" class="modal-overlay" @click.self="compareResult = null">
+        <div class="compare-result-modal">
+          <div class="compare-result-header">
+            <h2>🔄 文档对比结果</h2>
+            <button class="close-btn" @click="compareResult = null">✕</button>
+          </div>
+          <div class="compare-result-body">
+            <div v-if="compareResult.common_keywords && compareResult.common_keywords.length" class="compare-section">
+              <h3>🔗 共同关键词</h3>
+              <div class="keyword-tags">
+                <span v-for="kw in compareResult.common_keywords" :key="kw" class="keyword-tag common">
+                  {{ kw }}
+                </span>
+              </div>
+            </div>
+            <div v-if="compareResult.unique_keywords" class="compare-section">
+              <h3>🌟 独特关键词</h3>
+              <div v-for="(keywords, docId) in compareResult.unique_keywords" :key="docId" class="unique-group">
+                <span class="doc-label">文档 #{{ docId }}</span>
+                <div class="keyword-tags">
+                  <span v-for="kw in keywords" :key="kw" class="keyword-tag unique">
+                    {{ kw }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div v-if="!compareResult.common_keywords?.length && !Object.keys(compareResult.unique_keywords || {}).length" class="empty-compare">
+              <p>暂无对比数据，可能文档尚未提取关键词</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <Transition name="fade">
       <LoadingOverlay v-if="documentStore.isLoading" />
@@ -220,7 +263,13 @@ import ToastContainer from './components/ToastContainer.vue'
 const documentStore = useDocumentStore()
 const showUploadModal = ref(false)
 const showHistoryModal = ref(false)
+const showCompareModal = ref(false)
+const compareResult = ref(null)
 const navVisible = ref(false)
+
+const handleCompareResult = (result) => {
+  compareResult.value = result
+}
 </script>
 
 <style scoped>
@@ -854,5 +903,119 @@ const navVisible = ref(false)
   .content-inner {
     padding: 16px 16px 28px;
   }
+}
+
+/* ===== 文档对比结果弹窗 ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+  backdrop-filter: blur(4px);
+}
+
+.compare-result-modal {
+  background: #f5f1ea;
+  border-radius: 20px;
+  width: 90%;
+  max-width: 700px;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(192, 144, 96, 0.15);
+  border: 1px solid #d5cabb;
+}
+
+.compare-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 28px;
+  background: linear-gradient(135deg, #6db8e3 0%, #3a9fd8 100%);
+  color: white;
+}
+
+.compare-result-header h2 {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.compare-result-header .close-btn {
+  background: rgba(255,255,255,0.2);
+  color: white;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+}
+
+.compare-result-header .close-btn:hover {
+  background: rgba(255,255,255,0.35);
+}
+
+.compare-result-body {
+  padding: 28px;
+  max-height: calc(80vh - 90px);
+  overflow-y: auto;
+}
+
+.compare-section {
+  margin-bottom: 24px;
+}
+
+.compare-section h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #3a3630;
+  margin-bottom: 12px;
+}
+
+.keyword-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.keyword-tag {
+  padding: 5px 14px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.keyword-tag.common {
+  background: rgba(58, 159, 216, 0.12);
+  color: #2a7fb8;
+  border: 1px solid rgba(58, 159, 216, 0.25);
+}
+
+.keyword-tag.unique {
+  background: rgba(192, 144, 96, 0.1);
+  color: #8a6030;
+  border: 1px solid rgba(192, 144, 96, 0.25);
+}
+
+.unique-group {
+  margin-bottom: 16px;
+}
+
+.doc-label {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3a9fd8;
+  margin-bottom: 8px;
+}
+
+.empty-compare {
+  text-align: center;
+  padding: 40px 20px;
+  color: #8a7e72;
 }
 </style>
