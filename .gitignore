@@ -35,6 +35,13 @@ backend/2.70.0
 # Test files
 backend/test_doc.*
 backend/backend.log
+backend/benchmark_*.py
+backend/benchmark_results_*.json
+backend/generate_latex_table.py
+backend/query_stats.py
+backend/llm_benchmark_results.*
+backend/LLM_BENCHMARK_REPORT.md
+backend/llm_benchmark_standalone.tex
 
 # Personal documents (do not commit)、
 

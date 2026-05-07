@@ -361,6 +361,16 @@ GraDesign_one/
 
 ---
 
+## API Testing
+
+ - [x] DeepSeek-V4运行稳定，Flash版偶现JSON截断
+ - [x] Qwen3.6-Plus运行稳定
+ - [x] GPT-5.5/5.3运行稳定
+ - [x] Claude-opus/sonnet运行稳定
+ - [x] Gemini-3.1-pro-preview运行稳定
+
+---
+
 ## License
 
 MIT

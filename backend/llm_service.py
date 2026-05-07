@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+import random
 import requests
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
@@ -67,6 +68,10 @@ class LLMService:
             'display_name': os.environ.get(f'{prefix}_DISPLAY_NAME', provider),
             'supports_json_format': os.environ.get(f'{prefix}_SUPPORTS_JSON', '').lower() == 'true',
             'supports_file_upload': os.environ.get(f'{prefix}_SUPPORTS_FILE_UPLOAD', '').lower() == 'true',
+            # 部分网关（如 api.gpt.ge）对 gemini reasoning 模型首包较慢、易吃满 max_tokens，需走 stream 才稳定
+            'supports_stream': os.environ.get(f'{prefix}_SUPPORTS_STREAM', '').lower() == 'true',
+            # stream 白名单：逗号分隔；定义后仅命中列表的模型走 stream，其余直接 non-stream（gpt-5.x/claude 在 api.gpt.ge 上 non-stream 更稳）
+            'stream_models': [m.strip() for m in os.environ.get(f'{prefix}_STREAM_MODELS', '').split(',') if m.strip()],
             # DeepSeek V4 思考模式配置
             'thinking': os.environ.get(f'{prefix}_THINKING', ''),
             'reasoning_effort': os.environ.get(f'{prefix}_REASONING_EFFORT', ''),
@@ -116,6 +121,273 @@ class LLMService:
 
         # 思考模式下 temperature 等参数不生效，但为兼容不会报错，保留即可
         print(f"  🧠 思考模式: {thinking_mode}, 强度: {effort}")
+
+    def _post_stream(self, url: str, headers: dict, data: dict, timeout: int) -> dict:
+        """
+        发送流式（SSE）请求并汇总结果，统一模拟非流式的返回结构。
+        适用于类似 `api.gpt.ge` 的网关（gemini reasoning 模型 non-stream 首包慢、易截断，需 stream）。
+
+        返回结构：
+            {
+              'status_code': int,
+              'error': Optional[str],   # 非 200 时的错误文本
+              'result': dict            # 模拟 OpenAI 非流式的响应体 (成功时)
+            }
+        """
+        data = dict(data)  # 浅拷贝，避免污染调用方
+        data['stream'] = True
+
+        try:
+            resp = requests.post(url, headers=headers, json=data, timeout=timeout, stream=True)
+        except requests.exceptions.Timeout:
+            raise
+        except Exception:
+            raise
+
+        # 强制 UTF-8 解码，避免 api.gpt.ge 对 Gemini 返回体走 Latin-1 造成中文乱码
+        resp.encoding = 'utf-8'
+
+        if resp.status_code != 200:
+            # 非 200 不是 SSE，直接读文本
+            try:
+                err_text = resp.text[:500]
+            except Exception:
+                err_text = ''
+            return {'status_code': resp.status_code, 'error': err_text, 'result': None}
+
+        merged_content = ''
+        merged_reasoning = ''
+        finish_reason = None
+        usage = None
+        model_name = data.get('model', '')
+        response_id = ''
+
+        try:
+            for raw in resp.iter_lines(decode_unicode=True):
+                if not raw:
+                    continue
+                line = raw.strip()
+                if not line.startswith('data:'):
+                    continue
+                payload = line[5:].strip()
+                if payload == '[DONE]':
+                    break
+                try:
+                    obj = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+
+                if obj.get('id'):
+                    response_id = obj['id']
+                if obj.get('model'):
+                    model_name = obj['model']
+                if obj.get('usage'):
+                    usage = obj['usage']
+
+                for ch in obj.get('choices', []) or []:
+                    delta = ch.get('delta') or {}
+                    message = ch.get('message') or {}
+                    piece = delta.get('content') or message.get('content') or ''
+                    if piece:
+                        merged_content += piece
+                    rpiece = delta.get('reasoning_content') or message.get('reasoning_content') or ''
+                    if rpiece:
+                        merged_reasoning += rpiece
+                    if ch.get('finish_reason'):
+                        finish_reason = ch['finish_reason']
+        finally:
+            resp.close()
+
+        simulated = {
+            'id': response_id,
+            'model': model_name,
+            'object': 'chat.completion',
+            'choices': [{
+                'index': 0,
+                'message': {
+                    'role': 'assistant',
+                    'content': merged_content,
+                    'reasoning_content': merged_reasoning,
+                },
+                # 保留真实 finish_reason（None 表示流可能被中断），供上层判断断流
+                'finish_reason': finish_reason,
+            }],
+        }
+        if usage:
+            simulated['usage'] = usage
+        return {'status_code': 200, 'error': None, 'result': simulated}
+
+    # 网关“负载类”故障关键字：命中时视为可重试、可降级
+    _LOAD_ERROR_HINTS = (
+        'no available accounts',
+        'rate limit', 'rate_limit',
+        'overloaded', 'try again',
+        'server is busy', 'too many requests',
+        'upstream', 'no available channel',
+    )
+    # 负载类HTTP状态码
+    _LOAD_STATUS_CODES = (429, 500, 502, 503, 504)
+
+    def _stream_or_fallback(self, config: dict, headers: dict, data: dict, timeout: int) -> dict:
+        """
+        弹性调用 PipeLLM 类网关（当前默认网关：api.gpt.ge）：
+          ① 模型在 stream_models 白名单中（如 gemini-3.1-pro-preview 等 reasoning 模型）→ 先用 stream，失败后降级到 non-stream；
+          ② 模型不在白名单中（如 gpt-5.5 / gpt-5.4 / claude-opus-4-7 / claude-opus-4-7-low）→ 直接走 non-stream 重试（这些模型 non-stream 秒级响应更稳）。
+        返回结构：{'status_code', 'error', 'result'}
+        """
+        try:
+            stream_retries = int(os.environ.get('PIPELLM_STREAM_RETRY_MAX', '3'))
+        except Exception:
+            stream_retries = 3
+        try:
+            nonstream_retries = int(os.environ.get('PIPELLM_NONSTREAM_RETRY_MAX', '3'))
+        except Exception:
+            nonstream_retries = 3
+
+        model_name = data.get('model') or config.get('model') or ''
+        white = config.get('stream_models') or []
+        # 白名单留空 = 所有模型都用 stream；定义后只要模型名字命中其中一个前缀或全名
+        use_stream = (not white) or any(model_name == w or model_name.startswith(w) for w in white)
+
+        last = {'status_code': 0, 'error': 'not started', 'result': None}
+
+        # ── 阶段 A：stream 重试（仅白名单模型）──
+        if use_stream:
+            for i in range(stream_retries):
+                try:
+                    res = self._post_stream(config['api_url'], headers, data, timeout)
+                except requests.exceptions.Timeout:
+                    raise
+                except Exception as e:
+                    last = {'status_code': -1, 'error': str(e)[:300], 'result': None}
+                else:
+                    if res.get('status_code') == 200 and res.get('result') is not None:
+                        try:
+                            choice0 = res['result']['choices'][0]
+                            content = (choice0.get('message') or {}).get('content') or ''
+                            finish = choice0.get('finish_reason')
+                        except Exception:
+                            content, finish = '', None
+                        if content and finish in ('stop', 'end_turn'):
+                            return res
+                        if content:
+                            last = {'status_code': 200, 'error': f'stream truncated (finish_reason={finish!r})', 'result': res['result']}
+                        else:
+                            last = {'status_code': 200, 'error': 'empty content from stream', 'result': res['result']}
+                    else:
+                        last = res
+
+                if i < stream_retries - 1:
+                    sleep_s = 0.6 * (2 ** i) + random.random() * 0.4
+                    print(f"  ⏳ {config.get('display_name','LLM')} stream 第 {i+1}/{stream_retries} 次失败 (code={last.get('status_code')})，{sleep_s:.1f}s 后重试")
+                    time.sleep(sleep_s)
+        else:
+            print(f"  ➡️ {config.get('display_name','LLM')} 模型 {model_name} 不在 stream 白名单，直接使用 non-stream")
+
+        # ── 阶段 B：non-stream 重试（白名单模型所有 stream 失败后的降级路径，或非白名单模型的主路径）──
+        if use_stream:
+            print(f"  ♻️ {config.get('display_name','LLM')} stream 全部失败，降级到 non-stream")
+        ns_data = dict(data)
+        ns_data['stream'] = False
+        for j in range(nonstream_retries):
+            try:
+                r = requests.post(config['api_url'], headers=headers, json=ns_data, timeout=timeout)
+            except requests.exceptions.Timeout:
+                raise
+            except Exception as e:
+                last = {'status_code': -1, 'error': f'non-stream exc: {e}'[:300], 'result': None}
+            else:
+                # 强制 UTF-8，避免网关对 Gemini 返回体按 Latin-1 解码导致 JSON 中文乱码
+                r.encoding = 'utf-8'
+                if r.status_code == 200:
+                    try:
+                        j_obj = r.json()
+                        choices = j_obj.get('choices') or []
+                        if choices and (choices[0].get('message') or {}).get('content'):
+                            return {'status_code': 200, 'error': None, 'result': j_obj}
+                        last = {'status_code': 200, 'error': 'empty content (non-stream)', 'result': None}
+                    except Exception as e:
+                        # 部分网关忽略 stream=false，还是返 SSE 文本
+                        sse_res = self._parse_sse_text(r.text, model_hint=ns_data.get('model', ''))
+                        if sse_res is not None:
+                            try:
+                                choice0 = sse_res['choices'][0]
+                                content = (choice0.get('message') or {}).get('content') or ''
+                                finish = choice0.get('finish_reason')
+                                if content and finish in ('stop', 'end_turn'):
+                                    return {'status_code': 200, 'error': None, 'result': sse_res}
+                                last = {'status_code': 200, 'error': f'non-stream-sse truncated (finish_reason={finish!r})', 'result': sse_res}
+                            except Exception:
+                                last = {'status_code': 200, 'error': 'non-stream-sse parse error', 'result': None}
+                        else:
+                            last = {'status_code': 200, 'error': f'non-stream parse: {e}'[:300], 'result': None}
+                else:
+                    last = {'status_code': r.status_code, 'error': r.text[:300], 'result': None}
+
+            err_text = (last.get('error') or '').lower()
+            code = last.get('status_code') or 0
+            retriable = (
+                any(h in err_text for h in self._LOAD_ERROR_HINTS)
+                or code in self._LOAD_STATUS_CODES
+                or 'empty content' in err_text
+                or 'truncated' in err_text
+            )
+            if not retriable:
+                break
+            if j < nonstream_retries - 1:
+                sleep_s = 0.8 * (2 ** j) + random.random() * 0.5
+                print(f"  ⏳ {config.get('display_name','LLM')} non-stream 第 {j+1}/{nonstream_retries} 次失败 (code={code})，{sleep_s:.1f}s 后重试")
+                time.sleep(sleep_s)
+
+        return last
+
+    def _parse_sse_text(self, text: str, model_hint: str = '') -> Optional[dict]:
+        """将一段 SSE 完整文本（包含多行 data:）解析为非流式风格的 result dict。"""
+        if not text or 'data:' not in text:
+            return None
+        merged_content, merged_reasoning = '', ''
+        model_name, response_id, usage, finish_reason = model_hint, '', None, None
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line.startswith('data:'):
+                continue
+            payload = line[5:].strip()
+            if payload == '[DONE]':
+                break
+            try:
+                obj = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+            if obj.get('id'):
+                response_id = obj['id']
+            if obj.get('model'):
+                model_name = obj['model']
+            if obj.get('usage'):
+                usage = obj['usage']
+            for ch in obj.get('choices', []) or []:
+                delta = ch.get('delta') or {}
+                msg = ch.get('message') or {}
+                piece = delta.get('content') or msg.get('content') or ''
+                if piece:
+                    merged_content += piece
+                rp = delta.get('reasoning_content') or msg.get('reasoning_content') or ''
+                if rp:
+                    merged_reasoning += rp
+                if ch.get('finish_reason'):
+                    finish_reason = ch['finish_reason']
+        if not merged_content:
+            return None
+        result = {
+            'id': response_id, 'model': model_name, 'object': 'chat.completion',
+            'choices': [{
+                'index': 0,
+                'message': {'role': 'assistant', 'content': merged_content, 'reasoning_content': merged_reasoning},
+                'finish_reason': finish_reason or 'stop',
+            }],
+        }
+        if usage:
+            result['usage'] = usage
+        return result
 
     def _extract_content(self, result: dict) -> Optional[str]:
         """
@@ -274,6 +546,39 @@ class LLMService:
 
         _t0 = time.perf_counter()
         try:
+            if config.get('supports_stream'):
+                stream_res = self._stream_or_fallback(config, headers, data, config['timeout'])
+                _latency = int((time.perf_counter() - _t0) * 1000)
+                if stream_res['status_code'] == 200 and stream_res['result'] is not None:
+                    result = stream_res['result']
+                    content = self._extract_content(result)
+                    _usage = extract_usage(result)
+                    record_llm_call(
+                        provider=config.get('provider', ''),
+                        model=config.get('model', ''),
+                        call_type='chat',
+                        latency_ms=_latency,
+                        prompt_tokens=_usage['prompt_tokens'],
+                        completion_tokens=_usage['completion_tokens'],
+                        total_tokens=_usage['total_tokens'],
+                        status='success',
+                        input_chars=len(message),
+                        output_chars=len(content) if content else 0,
+                    )
+                    return content
+                else:
+                    record_llm_call(
+                        provider=config.get('provider', ''),
+                        model=config.get('model', ''),
+                        call_type='chat',
+                        latency_ms=_latency,
+                        status='error',
+                        input_chars=len(message),
+                        error_message=f"HTTP {stream_res['status_code']}",
+                    )
+                    print(f"Chat API 错误(stream): {stream_res['status_code']}, {stream_res.get('error', '')}")
+                    return None
+
             response = requests.post(
                 config['api_url'],
                 headers=headers,
@@ -281,6 +586,9 @@ class LLMService:
                 timeout=config['timeout']
             )
             _latency = int((time.perf_counter() - _t0) * 1000)
+
+            # 强制 UTF-8 解码，规避网关对某些模型（如 Gemini）返回体按 Latin-1 解码的乱码问题
+            response.encoding = 'utf-8'
 
             if response.status_code == 200:
                 result = response.json()
@@ -394,7 +702,12 @@ class LLMService:
         """
         使用文件引用调用 API（fileid:// 格式，DashScope/OpenAI 兼容）
         文件内容由 API 端直接解析，无需本地文本提取
+        注：调用 API 时使用文件专用模型名（如 qwen-long），
+             但统计埋点统一记录为配置中的主模型名（如 qwen3.6-plus），
+             以便 llm_stats.db 聚合时不会被 file_model 别名拆成多条。
         """
+        # 用于埋点统计的规范模型名（文件直传要和普通 chat 调用聚合到同一模型）
+        stat_model = config.get('model') or model
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {config["api_key"]}'
@@ -417,6 +730,39 @@ class LLMService:
 
         _t0 = time.perf_counter()
         try:
+            if config.get('supports_stream'):
+                stream_res = self._stream_or_fallback(config, headers, data, config.get('timeout', 120))
+                _latency = int((time.perf_counter() - _t0) * 1000)
+                if stream_res['status_code'] == 200 and stream_res['result'] is not None:
+                    result = stream_res['result']
+                    content = self._extract_content(result)
+                    _usage = extract_usage(result)
+                    record_llm_call(
+                        provider=config.get('provider', ''),
+                        model=stat_model,
+                        call_type='file_upload',
+                        latency_ms=_latency,
+                        prompt_tokens=_usage['prompt_tokens'],
+                        completion_tokens=_usage['completion_tokens'],
+                        total_tokens=_usage['total_tokens'],
+                        status='success',
+                        input_chars=len(user_prompt),
+                        output_chars=len(content) if content else 0,
+                    )
+                    return content
+                else:
+                    record_llm_call(
+                        provider=config.get('provider', ''),
+                        model=stat_model,
+                        call_type='file_upload',
+                        latency_ms=_latency,
+                        status='error',
+                        input_chars=len(user_prompt),
+                        error_message=f"HTTP {stream_res['status_code']}",
+                    )
+                    print(f"  文件分析 API 错误(stream): {stream_res['status_code']}, {stream_res.get('error', '')[:300]}")
+                    return None
+
             response = requests.post(
                 config['api_url'],
                 headers=headers,
@@ -425,13 +771,16 @@ class LLMService:
             )
             _latency = int((time.perf_counter() - _t0) * 1000)
 
+            # 强制 UTF-8 解码，规避 Gemini 等模型网关返回体的乱码问题
+            response.encoding = 'utf-8'
+
             if response.status_code == 200:
                 result = response.json()
                 content = self._extract_content(result)
                 _usage = extract_usage(result)
                 record_llm_call(
                     provider=config.get('provider', ''),
-                    model=model,
+                    model=stat_model,
                     call_type='file_upload',
                     latency_ms=_latency,
                     prompt_tokens=_usage['prompt_tokens'],
@@ -445,7 +794,7 @@ class LLMService:
             else:
                 record_llm_call(
                     provider=config.get('provider', ''),
-                    model=model,
+                    model=stat_model,
                     call_type='file_upload',
                     latency_ms=_latency,
                     status='error',
@@ -458,7 +807,7 @@ class LLMService:
             _latency = int((time.perf_counter() - _t0) * 1000)
             record_llm_call(
                 provider=config.get('provider', ''),
-                model=model,
+                model=stat_model,
                 call_type='file_upload',
                 latency_ms=_latency,
                 status='timeout',
@@ -471,7 +820,7 @@ class LLMService:
             _latency = int((time.perf_counter() - _t0) * 1000)
             record_llm_call(
                 provider=config.get('provider', ''),
-                model=model,
+                model=stat_model,
                 call_type='file_upload',
                 latency_ms=_latency,
                 status='error',
@@ -686,6 +1035,39 @@ class LLMService:
 
         _t0 = time.perf_counter()
         try:
+            if config.get('supports_stream'):
+                stream_res = self._stream_or_fallback(config, headers, data, config.get('timeout', 60))
+                _latency = int((time.perf_counter() - _t0) * 1000)
+                if stream_res['status_code'] == 200 and stream_res['result'] is not None:
+                    result = stream_res['result']
+                    content = self._extract_content(result)
+                    _usage = extract_usage(result)
+                    record_llm_call(
+                        provider=config.get('provider', ''),
+                        model=config.get('model', ''),
+                        call_type=call_type,
+                        latency_ms=_latency,
+                        prompt_tokens=_usage['prompt_tokens'],
+                        completion_tokens=_usage['completion_tokens'],
+                        total_tokens=_usage['total_tokens'],
+                        status='success',
+                        input_chars=len(user_content),
+                        output_chars=len(content) if content else 0,
+                    )
+                    return content
+                else:
+                    record_llm_call(
+                        provider=config.get('provider', ''),
+                        model=config.get('model', ''),
+                        call_type=call_type,
+                        latency_ms=_latency,
+                        status='error',
+                        input_chars=len(user_content),
+                        error_message=f"HTTP {stream_res['status_code']}",
+                    )
+                    print(f"API 错误(stream): 状态码={stream_res['status_code']}, 响应={stream_res.get('error', '')}")
+                    return None
+
             response = requests.post(
                 config['api_url'],
                 headers=headers,
@@ -693,6 +1075,9 @@ class LLMService:
                 timeout=config.get('timeout', 60)
             )
             _latency = int((time.perf_counter() - _t0) * 1000)
+
+            # 强制 UTF-8 解码，规避 Gemini 等模型网关返回体的乱码问题
+            response.encoding = 'utf-8'
 
             if response.status_code == 200:
                 result = response.json()

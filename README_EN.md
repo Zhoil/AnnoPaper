@@ -358,6 +358,16 @@ GraDesign_one/
 
 ---
 
+## API Testing
+
+ - [x] DeepSeek-V4 run stably，Flash version appears JSON cut sometimes
+ - [x] Qwen3.6-Plus run stably
+ - [x] GPT-5.5/5.4 run stably
+ - [x] Claude-opus/sonnet run stably
+ - [x] Gemini-3.1-pro-preview run stably
+
+---
+
 ## License
 
 MIT
