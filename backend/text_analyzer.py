@@ -584,22 +584,36 @@ class TextAnalyzer:
             return []
 
     def _normalize_for_search(self, text):
-        """统一文本归一化：NFKC + 去零宽字符 + 空白归一化 + 去换行"""
-        t = unicodedata.normalize('NFKC', text)
+        """统一文本归一化：中文标点去空格 + NFKC + 去零宽字符 + 空白归一化 + 去换行"""
+        # …于 NFKC 之前先去掉全角中文标点两侧空格，
+        # 因为 NFKC 会把 ，。！？；：（） 等全角标点转为半角 ASCII，二者之后无法区分。
+        t = re.sub(r'\s*([，。！？；：、（）【】「」『』《》〈〉〔〕\u201c\u201d\u2018\u2019])\s*', r'\1', text)
+        t = unicodedata.normalize('NFKC', t)
         t = re.sub(r'[\u200b\u200c\u200d\ufeff\u00ad\u200e\u200f]', '', t)
         t = t.replace('\n', ' ').replace('\r', '')
         t = re.sub(r'\s+', ' ', t).strip()
         return t
 
     def _strip_cjk_spaces(self, text):
-        """去除 CJK 字符之间的多余空格（保留拉丁字符间的空格）"""
-        # 去除“CJK字符 + 空格 + CJK字符”中的空格
-        t = re.sub(r'([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef])\s+([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef])', r'\1\2', text)
-        # 去除“CJK字符 + 空格 + 拉丁”中的空格
-        t = re.sub(r'([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef])\s+([a-zA-Z0-9])', r'\1\2', t)
-        # 去除“拉丁 + 空格 + CJK字符”中的空格
-        t = re.sub(r'([a-zA-Z0-9])\s+([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef])', r'\1\2', t)
+        """去除 CJK 字符之间（或与英文边界）的多余空格；循环应用直至稳定，
+        以处理 "生 成 式"、"当 智能 ..." 这类由 LLM 逐字插入空格的情况。"""
+        cjk = r'\u4e00-\u9fff\u3000-\u303f\uff00-\uffef'
+        prev = None
+        t = text
+        # re.sub 的非重叠扫描单次无法消除连续 "CJK 空格 CJK 空格 CJK" 全部空格，故循环
+        while prev != t:
+            prev = t
+            # CJK + 空格 + CJK
+            t = re.sub(fr'([{cjk}])\s+([{cjk}])', r'\1\2', t)
+            # CJK + 空格 + 拉丁
+            t = re.sub(fr'([{cjk}])\s+([a-zA-Z0-9])', r'\1\2', t)
+            # 拉丁 + 空格 + CJK
+            t = re.sub(fr'([a-zA-Z0-9])\s+([{cjk}])', r'\1\2', t)
         return t
+
+    def _strip_quotes(self, text):
+        """去除各种引号字符（忽略方向差异，用于兜底匹配）"""
+        return re.sub(r'["\u2018\u2019\u201c\u201d\u2032\u2035`\']', '', text)
 
     def _detect_pdf_type(self, doc):
         """
@@ -663,6 +677,25 @@ class TextAnalyzer:
                 quads = page.search_for(smart_text, quads=True)
                 if quads:
                     return self._apply_highlight(page, quads, color)
+
+            # ── 策略 3.5：ASCII 引号 → 智能引号反向替换（处理 PDF 原文为智能引号、LLM 返回 ASCII 的情况）──
+            reverse_text = re.sub(r"'([^']+)'", '\u2018\\1\u2019', norm_text)
+            reverse_text = re.sub(r'"([^"]+)"', '\u201c\\1\u201d', reverse_text)
+            if reverse_text != norm_text:
+                quads = page.search_for(reverse_text, quads=True)
+                if quads:
+                    return self._apply_highlight(page, quads, color)
+
+            # ── 策略 3.6：彻底去除引号后匹配（忽略引号差异，仅取芯片段）──
+            no_quote_text = self._strip_quotes(norm_text)
+            no_quote_text = self._strip_cjk_spaces(no_quote_text)
+            if no_quote_text != norm_text and len(no_quote_text) >= 12:
+                for seg_len in [len(no_quote_text), 60, 40, 25, 15]:
+                    if seg_len > len(no_quote_text):
+                        continue
+                    quads = page.search_for(no_quote_text[:seg_len], quads=True)
+                    if quads:
+                        return self._apply_highlight(page, quads, color)
 
             # ── 策略 4：归一化子串匹配 → 截短搜索 ──
             if norm_query in norm_page:
@@ -850,12 +883,19 @@ class TextAnalyzer:
             smart = smart.replace('\u2013', '-').replace('\u2014', '-')
             smart = smart.replace('\u00a0', ' ')
 
-            # 去CJK间空格变体
+            # ASCII 引号 → 智能引号反向替换
+            reverse = re.sub(r"'([^']+)'", '\u2018\\1\u2019', norm)
+            reverse = re.sub(r'"([^"]+)"', '\u201c\\1\u201d', reverse)
+
+            # 去 CJK 间空格变体
             cjk_stripped = self._strip_cjk_spaces(norm)
 
+            # 去引号 + 去 CJK 空格变体（兜底）
+            no_quote = self._strip_cjk_spaces(self._strip_quotes(norm))
+
             variants = [text_clean]
-            for v in [norm, smart, cjk_stripped]:
-                if v not in variants:
+            for v in [norm, smart, reverse, cjk_stripped, no_quote]:
+                if v and v not in variants:
                     variants.append(v)
 
             for page_idx in search_pages:
