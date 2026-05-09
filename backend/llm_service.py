@@ -417,16 +417,22 @@ class LLMService:
             print(f"  ⚠️ 解析响应失败: {str(e)}")
             return None
 
-    def _build_system_prompt(self, provider: str) -> str:
-        """根据提供商构建系统提示词（委托给 prompts 模块）"""
+    def _build_system_prompt(self, provider: str, genre_hint: str = '') -> str:
+        """根据提供商构建系统提示词（委托给 prompts 模块）
+
+        Args:
+            provider: API 提供商
+            genre_hint: 文体检测结果生成的定制分析指引
+        """
         config = self._get_provider_config(provider)
         model_ref = config.get('display_name', 'DeepSeek-V4-Pro')
-        return build_analyze_system_prompt(model_ref)
+        return build_analyze_system_prompt(model_ref, genre_hint=genre_hint)
 
     def analyze_text(self, text: str, provider: str = 'deepseek',
                      file_path: Optional[str] = None, file_size: int = 0,
                      image_descriptions: str = '',
-                     model_override: str = '') -> Optional[Dict]:
+                     model_override: str = '',
+                     genre_hint: str = '') -> Optional[Dict]:
         """
         使用指定 API 提供商分析文档
 
@@ -439,13 +445,14 @@ class LLMService:
             file_size: 文件大小（字节）
             image_descriptions: 图片独立分析结果（两阶段第一阶段输出）
             model_override: 前端指定的具体模型名（覆盖默认模型）
+            genre_hint: 文体检测结果生成的定制分析指引（注入 system prompt）
         """
         config = self._get_provider_config(provider)
         # 如果前端指定了具体模型，覆盖默认模型
         if model_override:
             config['model'] = model_override
             print(f"🎯 使用前端指定模型: {model_override}")
-        system_prompt = self._build_system_prompt(provider)
+        system_prompt = self._build_system_prompt(provider, genre_hint=genre_hint)
 
         try:
             # ── 优先方案：文件直传 API ──────────────────────────

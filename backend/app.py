@@ -286,7 +286,8 @@ def upload_file():
             'summary': analysis_result['summary'],
             'statistics': analysis_result['statistics'],
             'highlights': analysis_result['highlights'],
-            'annotated_url': annotated_url
+            'annotated_url': annotated_url,
+            'genre': analysis_result.get('genre')  # 文体检测结果
         })
     
     except Exception as e:
@@ -374,7 +375,8 @@ def upload_url():
             'statistics': analysis_result['statistics'],
             'highlights': analysis_result['highlights'],
             'annotated_url': annotated_url,
-            'is_web': True  # 标记为网页类型
+            'is_web': True,  # 标记为网页类型
+            'genre': analysis_result.get('genre')  # 文体检测结果
         })
     
     except Exception as e:

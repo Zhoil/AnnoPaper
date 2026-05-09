@@ -8,6 +8,7 @@ import fitz  # PyMuPDF — 统一文本搜索 + 原生高亮标注引擎
 import os
 from docx import Document
 from docx.enum.text import WD_COLOR_INDEX
+from genre_detector import detect_genre
 
 class TextAnalyzer:
     """文本分析器，提取关键点、生成摘要和统计信息"""
@@ -43,6 +44,21 @@ class TextAnalyzer:
         file_path = structured_data.get('filepath') if structured_data else None
         file_size = structured_data.get('file_size', 0) if structured_data else 0
 
+        # ── 阶段0：文体类型检测（规则式，零 LLM 开销） ─────────
+        metadata = structured_data.get('metadata', {}) if structured_data else {}
+        try:
+            genre_info = detect_genre(text, metadata=metadata)
+            genre_hint = genre_info.get('guidance', '') or ''
+            print(f"🏷️ 文体识别：{genre_info.get('genre_name')} "
+                  f"（{genre_info.get('genre')}，置信度 {genre_info.get('confidence', 0):.2f}）")
+        except Exception as e:
+            print(f"⚠️ 文体检测失败，使用通用分析：{e}")
+            genre_info = {
+                'genre': 'general', 'genre_name': '通用文本',
+                'confidence': 0.0, 'scores': {}, 'features': {}, 'guidance': ''
+            }
+            genre_hint = ''
+
         # ── 阶段1：图片独立处理 ──────────────────────────────
         image_descriptions = ''
         if structured_data and structured_data.get('structured_content'):
@@ -70,14 +86,26 @@ class TextAnalyzer:
             file_path=file_path,
             file_size=file_size,
             image_descriptions=image_descriptions,
-            model_override=api_model
+            model_override=api_model,
+            genre_hint=genre_hint
         )
 
         if llm_result:
-            return self._process_llm_result(text, llm_result)
+            result = self._process_llm_result(text, llm_result)
+        else:
+            print("大模型分析失败，回退到传统方法")
+            result = self._traditional_analyze(text)
 
-        print("大模型分析失败，回退到传统方法")
-        return self._traditional_analyze(text)
+        # 附加文体信息到返回结果的顶层
+        if isinstance(result, dict):
+            result['genre'] = {
+                'type': genre_info.get('genre', 'general'),
+                'name': genre_info.get('genre_name', '通用文本'),
+                'confidence': round(float(genre_info.get('confidence', 0.0)), 3),
+                'features': genre_info.get('features', {}),
+                'scores': genre_info.get('scores', {}),
+            }
+        return result
     
     def _traditional_analyze(self, text):
         """简单传统分析（降级方案）"""

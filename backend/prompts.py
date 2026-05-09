@@ -19,6 +19,8 @@ ANALYZE_SYSTEM_PROMPT = """你是一个顶尖的文献情报分析专家（{mode
 - 长文（>8000字）：5-8 个
 </task>
 
+{genre_hint}
+
 <rules>
 1. **逐字引用原则**（最关键）：
    - point 和 evidence.text 必须从原文中**逐字精确复制**，包含完整的句子（从句首到句末标点）
@@ -130,9 +132,18 @@ ANALYZE_SYSTEM_PROMPT = """你是一个顶尖的文献情报分析专家（{mode
 </scoring>"""
 
 
-def build_analyze_system_prompt(model_ref: str) -> str:
-    """构建文档分析系统 prompt。"""
-    return ANALYZE_SYSTEM_PROMPT.format(model_ref=model_ref or 'DeepSeek-V4-Pro')
+def build_analyze_system_prompt(model_ref: str, genre_hint: str = '') -> str:
+    """构建文档分析系统 prompt。
+
+    Args:
+        model_ref: 模型名称（用于 prompt 里的自我介绍）
+        genre_hint: 文体检测结果生成的定制分析指引
+                    （来自 genre_detector.detect_genre() 的 guidance 字段）
+    """
+    return ANALYZE_SYSTEM_PROMPT.format(
+        model_ref=model_ref or 'DeepSeek-V4-Pro',
+        genre_hint=genre_hint or '',
+    )
 
 
 # 文件直传时的用户 prompt 模板

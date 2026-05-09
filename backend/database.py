@@ -206,6 +206,7 @@ class Database:
             'statistics': analysis_result.get('statistics', {}),
             'highlights': analysis_result.get('highlights', []),
             'annotated_url': analysis_result.get('annotated_url'), # 提取标注URL
+            'genre': analysis_result.get('genre'),  # 文体检测结果透传
             'created_at': row[4],
             'analysis_result': analysis_result
         }
