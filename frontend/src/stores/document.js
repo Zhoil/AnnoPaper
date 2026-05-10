@@ -273,6 +273,8 @@ export const useDocumentStore = defineStore('document', {
     async sendChatMessage(message, chatHistory = []) {
       const doc = this.currentDocument
       let documentContext = ''
+      // 上传后会在文档对象中写入 record_id，历史详情的字段名为 id
+      const analysisId = doc?.record_id ?? doc?.id ?? null
 
       if (doc) {
         const keypoints = (doc.keypoints || [])
@@ -282,11 +284,11 @@ export const useDocumentStore = defineStore('document', {
         
         const summaryText = doc.summary?.conclusions?.[0] || ''
 
+        // 文档正文内容交由后端 RAG 按问题动态拼接，前端仅传概览作为兄弟上下文
         documentContext = [
           `文档标题：${doc.title || '未知文档'}`,
           summaryText ? `文档摘要：${summaryText}` : '',
-          keypoints ? `核心关键点：\n${keypoints}` : '',
-          `文档内容节选：\n${(doc.content || '').substring(0, 2000)}`
+          keypoints ? `核心关键点：\n${keypoints}` : ''
         ].filter(Boolean).join('\n\n')
       }
 
@@ -294,7 +296,8 @@ export const useDocumentStore = defineStore('document', {
         const response = await axios.post('/api/chat', {
           message,
           document_context: documentContext,
-          chat_history: chatHistory
+          chat_history: chatHistory,
+          analysis_id: analysisId
         })
 
         if (response.data.success) {

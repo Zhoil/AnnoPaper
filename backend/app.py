@@ -38,6 +38,7 @@ from database import Database
 from logic_builder import build_logic_tree
 from scholar_api import recommend_for_record
 from llm_recommender import recommend_with_llm
+import rag_indexer
 
 # ── 文献推荐缓存常量 ──
 RECOMMEND_TTL_SECONDS = 2 * 24 * 3600   # 2 天缓存
@@ -110,6 +111,25 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(ANNOTATED_FOLDER, exist_ok=True)
 os.makedirs(PARSED_FOLDER, exist_ok=True)
+
+def _build_rag_index_safe(record_id, structured_content, text_content):
+    """将解析产物构建为 RAG 索引并落库。失败不阻断主流程。"""
+    try:
+        chunks = rag_indexer.build_chunks(structured_content or [], text_content or '')
+        if not chunks:
+            print(f'[RAG] 无可用 chunks，跳过索引构建 id={record_id}')
+            return
+        built = rag_indexer.build_index(chunks)
+        if not built:
+            print(f'[RAG] BM25 索引构建返回空 id={record_id}')
+            return
+        chunks_json, bm25_blob, cnt = built
+        db.save_rag_index(record_id, chunks_json, bm25_blob, cnt)
+        rag_indexer.invalidate_cache(record_id)
+        print(f'[RAG] 索引已入库 id={record_id} chunks={cnt}')
+    except Exception as e:
+        print(f'⚠️ RAG 索引构建失败（不影响主流程）: {e}')
+
 
 @app.route('/files/<path:filename>')
 def serve_file(filename):
@@ -282,6 +302,9 @@ def upload_file():
             analysis_result=analysis_result,
             file_hash=file_hash
         )
+
+        # ── 预构建 RAG 段落索引（失败不阻断主流程） ──
+        _build_rag_index_safe(record_id, structured_content, text_content)
         
         # 返回结果
         return jsonify({
@@ -371,6 +394,9 @@ def upload_url():
             analysis_result=analysis_result,
             file_hash=url_hash
         )
+
+        # ── 预构建 RAG 段落索引（失败不阻断主流程） ──
+        _build_rag_index_safe(record_id, structured_content, text_content)
         
         return jsonify({
             'success': True,
@@ -437,6 +463,13 @@ def delete_history(record_id):
         
         if not success:
             return jsonify({'error': '删除失败'}), 500
+
+        # 同步清理 RAG 索引与内存缓存
+        try:
+            db.delete_rag_index(record_id)
+            rag_indexer.invalidate_cache(record_id)
+        except Exception as e:
+            print(f'⚠️ 清理 RAG 索引失败: {e}')
         
         return jsonify({
             'success': True,
@@ -498,20 +531,51 @@ def compare_documents():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """AI 对话接口（固定使用 DeepSeek-R1）"""
+    """AI 对话接口：若带 analysis_id 则启用 BM25 检索增强。"""
     try:
         data = request.json
         message = data.get('message', '').strip()
         document_context = data.get('document_context', '')
         chat_history = data.get('chat_history', [])
+        analysis_id = data.get('analysis_id')
 
         if not message:
             return jsonify({'error': '消息不能为空'}), 400
 
+        # ── RAG 检索增强：按问题动态召回相关段落拼入 document_context ──
+        rag_hits = []
+        if analysis_id is not None:
+            try:
+                aid = int(analysis_id)
+                loaded = rag_indexer.load_index(aid, db)
+                if loaded:
+                    chunks, bm25 = loaded
+                    rag_hits = rag_indexer.retrieve(message, chunks, bm25, top_k=5)
+            except (TypeError, ValueError):
+                pass
+            except Exception as e:
+                print(f'⚠️ RAG 检索失败（降级到截断上下文）: {e}')
+
+        if rag_hits:
+            retrieved_block = rag_indexer.format_context(rag_hits)
+            if document_context:
+                document_context = f"{document_context}\n\n===== 从文档中检索到的相关段落 =====\n{retrieved_block}"
+            else:
+                document_context = f"===== 从文档中检索到的相关段落 =====\n{retrieved_block}"
+
         response = analyzer.llm_service.chat(message, document_context, chat_history)
 
         if response:
-            return jsonify({'success': True, 'response': response})
+            return jsonify({
+                'success': True,
+                'response': response,
+                'rag_used': bool(rag_hits),
+                'rag_hits': [
+                    {'idx': h.get('idx'), 'page': h.get('page'),
+                     'source_type': h.get('source_type'), 'score': h.get('score')}
+                    for h in rag_hits
+                ]
+            })
         else:
             return jsonify({'error': 'AI 响应失败，请稍后重试'}), 500
 

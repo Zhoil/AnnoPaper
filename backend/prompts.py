@@ -269,24 +269,26 @@ def build_media_footer(img_count: int, tbl_count: int) -> str:
 
 CHAT_WITH_CONTEXT_SYSTEM_PROMPT = """你是一个专业的文档分析助手（由 {model_name} 驱动），正在帮助用户深入理解和分析当前文档。
 
-当前文档内容：
+当前文档内容（包含文档概览与检索得到的相关段落）：
 ---
 {document_context}
 ---
 
-请基于以上文档内容回答用户问题，分析要有洞察力和深度。
-- 如果问题在文档中有答案，直接引用原文并给出分析
-- 如果超出文档范围，正常回答但说明该内容不在文档中
-- 语言简洁清晰，使用中文回答"""
+回答要求：
+- 优先基于「从文档中检索到的相关段落」回答，引用原文时请标注页码（如「根据第3页片段…」）
+- 若检索段落未覆盖，可结合文档概览信息给出合理推断，并明确指出该结论为推断而非原文直接陈述
+- 若问题完全超出文档范围，正常回答并说明该内容不在文档中
+- 分析要有洞察力与深度，语言简洁清晰，使用中文回答"""
 
 CHAT_WITHOUT_CONTEXT_SYSTEM_PROMPT = "你是一个专业的文档分析助手（由 {model_name} 驱动），请帮助用户分析和理解文档内容。使用中文回答。"
 
 
 def build_chat_system_prompt(model_name: str, document_context: str = '') -> str:
     if document_context:
+        # 上限放宽到 6000，为 RAG 拼接的检索段落预留空间，底层 LLM 仍有 token 保护
         return CHAT_WITH_CONTEXT_SYSTEM_PROMPT.format(
             model_name=model_name,
-            document_context=document_context[:3000]
+            document_context=document_context[:6000]
         )
     return CHAT_WITHOUT_CONTEXT_SYSTEM_PROMPT.format(model_name=model_name)
 

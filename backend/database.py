@@ -52,7 +52,57 @@ class Database:
 
         # 索引：file_hash 查找加速
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_file_hash ON analysis_records(file_hash)')
-        
+
+        # ── RAG 段落索引表（解析完成时预构建，chat 时按问题动态召回）──
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS document_rag_index (
+                analysis_id INTEGER PRIMARY KEY,
+                chunks_json TEXT NOT NULL,
+                bm25_blob BLOB NOT NULL,
+                chunk_count INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        conn.commit()
+        conn.close()
+
+    # ── RAG 索引持久化 ──
+    def save_rag_index(self, analysis_id, chunks_json, bm25_blob, chunk_count):
+        """保存（或覆盖）指定分析记录的 BM25 索引。"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO document_rag_index
+                (analysis_id, chunks_json, bm25_blob, chunk_count, created_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (analysis_id, chunks_json, bm25_blob, chunk_count))
+        conn.commit()
+        conn.close()
+
+    def load_rag_index(self, analysis_id):
+        """读取指定分析记录的 BM25 索引原始字段。未命中返回 None。"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT chunks_json, bm25_blob, chunk_count
+            FROM document_rag_index WHERE analysis_id = ?
+        ''', (analysis_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return {
+            'chunks_json': row[0],
+            'bm25_blob': row[1],
+            'chunk_count': row[2]
+        }
+
+    def delete_rag_index(self, analysis_id):
+        """删除指定分析记录的 RAG 索引（随记录删除同步调用）。"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM document_rag_index WHERE analysis_id = ?', (analysis_id,))
         conn.commit()
         conn.close()
     
