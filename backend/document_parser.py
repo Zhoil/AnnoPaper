@@ -3,18 +3,22 @@ from bs4 import BeautifulSoup
 from docx import Document
 import re
 import markdown
-from pdf_parser_docling import DoclingPDFParser
+from pdf_parser import PDFParser
 from web_parser_enhanced import EnhancedWebParser
 
 class DocumentParser:
     """
     文档解析器
     支持格式: PDF, Word, HTML, Markdown, 网页URL
-    PDF 使用 Docling 解析器（模型缓存: backend/.hf_cache）
+    PDF 解析由 pdf_parser.PDFParser 路由：
+      • 首选 MinerU（中文论文更精准，不产生 G→ß 等字符替换）
+      • 兑底 Docling（保留既有集成与 .hf_cache 缓存）
+      • 最终兑底 PyMuPDF（纯文本）
+    切换引擎：设环境变量 PDF_PARSER_ENGINE = 'mineru' | 'docling' | 'auto'
     """
 
     def __init__(self):
-        self.pdf_parser = DoclingPDFParser()
+        self.pdf_parser = PDFParser()
         self.enhanced_web_parser = EnhancedWebParser()
     
     def parse(self, filepath):

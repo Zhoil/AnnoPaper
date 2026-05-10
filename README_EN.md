@@ -13,11 +13,11 @@
     <img src="https://img.shields.io/badge/Version-v3.1.1-orange.svg" alt="Version" />
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
   </p>
-  <p><strong>AI-powered document deep analysis & physical annotation system built with Vue 3 + Flask + Docling structured parsing + multi-LLM engines</strong></p>
-  <p>📚 Docling-driven document parsing · 🎯 Character-level precise annotation · 🧠 Multi-model AI analysis · 📄 PDF/DOCX/HTML/URL support</p>
+  <p><strong>AI-powered document deep analysis & physical annotation system built with Vue 3 + Flask + MinerU / Docling dual-engine structured parsing + multi-LLM engines</strong></p>
+  <p>📚 MinerU-primary / Docling-fallback dual-engine parsing · 🎯 Character-level precise annotation · 🧠 Multi-model AI analysis · 📄 PDF/DOCX/HTML/URL support</p>
 </div>
 
-> 💡 **Docling** serves as the **core document parsing engine** of this project, providing advanced structured extraction capabilities (with optional OCR), intelligently recognizing tables, images, formulas and other complex elements. When Docling is unavailable, the system automatically falls back to PyMuPDF for basic parsing.
+> 💡 **MinerU + Docling Dual-Engine Architecture**: The system uses **MinerU 3.x** (open-sourced by OpenDataLab, SOTA 86.2 on OmniDocBench v1.5) as the primary PDF parser, significantly outperforming pure Docling on Chinese papers, formulas and tables. When MinerU is unavailable or fails, it falls back to **Docling** (open-sourced by IBM Research); when both fail, the system degrades to PyMuPDF plain-text parsing. The engine can be explicitly switched via `PDF_PARSER_ENGINE = mineru | docling | auto`. All model weights are cached locally under `backend/.mineru_cache` and `backend/.hf_cache`, keeping the system disk clean.
 
 ---
 
@@ -39,13 +39,16 @@
 | SQLite | Persistent storage for analysis records |
 | python-dotenv | Environment variable management (API key isolation) |
 | jieba | Chinese word segmentation (keyword statistics fallback) |
-| Docling | Advanced document structure extraction (optional OCR) |
+| **MinerU 3.x** | **Primary** PDF structured parser (Chinese OCR / LaTeX formulas / HTML tables / long-doc sliding window) |
+| Docling | Fallback PDF structured parser (optional OCR) |
 
-### PDF Processing (Three-Library Pipeline)
+### PDF Processing Pipeline
 | Technology | Role |
 |-----------|------|
-| **PyMuPDF (fitz)** | Image extraction, metadata reading, PDF page overlay/merge, Docling fallback |
-| **pdfplumber** | Character-level precise coordinate extraction, table recognition |
+| **MinerU (pipeline backend)** | DocLayoutYOLO layout + PaddleOCR + UnetTable + Unimernet formulas, producing structured JSON |
+| **Docling** | Fallback structured parser, auto-switched when MinerU fails |
+| **PyMuPDF (fitz)** | Image extraction, metadata reading, page overlay merge, final plain-text fallback |
+| **pdfplumber** | Character-level precise coordinate extraction for annotation stage |
 | **reportlab** | Transparent highlight overlay creation (vector graphics rendering) |
 
 ### LLM APIs (Three Switchable Engines)
@@ -80,10 +83,10 @@ User uploads file
       ▼
 ┌─────────────────────────────────────────────────┐
 │                DocumentParser                   │
-│  .pdf  → EnhancedPDFParser / DoclingParser      │
-│            ├── pdfplumber: extract text+tables  │
-│            ├── PyMuPDF:    extract images+meta  │
-│            ├── Docling:    deep structure (opt) │
+│  .pdf  → PDFParser (engine router)              │
+│            ├── MinerU:     primary structured  │
+│            ├── Docling:    fallback structured │
+│            ├── PyMuPDF:    final plain-text    │
 │            └── output: text + structured_content│
 │  .docx → python-docx                            │
 │  .doc  → win32com subprocess (solves COM/STA)  │
@@ -313,7 +316,8 @@ GraDesign_one/
 │   ├── app.py                  # Flask main app, RESTful routes + /api/providers
 │   ├── llm_service.py          # Multi-provider LLM service (DeepSeek / Qwen / PipeLLM)
 │   ├── text_analyzer.py        # Text analyzer: two-phase analysis, Map-Reduce, PDF annotation
-│   ├── pdf_parser_enhanced.py  # Enhanced PDF parser (text + tables + images)
+│   ├── pdf_parser.py           # PDF engine router (MinerU primary / Docling fallback / PyMuPDF final)
+│   ├── pdf_parser_mineru.py    # MinerU parser wrapper (pipeline backend, unified schema)
 │   ├── pdf_parser_docling.py   # Docling PDF parser (structure extraction + fallback)
 │   ├── document_parser.py      # Document dispatcher: PDF/DOCX/DOC/HTML/URL routing
 │   ├── web_parser_enhanced.py  # Enhanced web page parser
@@ -349,12 +353,14 @@ GraDesign_one/
 
 ## Notes
 
-- File size limit: 16 MB (PDFs > 50 MB automatically fall back to PyMuPDF parsing)
+- File size limit: 16 MB (internal PDF thresholds: MinerU 80 MB / Docling 50 MB, auto-fallback to PyMuPDF plain-text beyond)
 - `.doc` format parsing requires Microsoft Word installed locally (via win32com)
 - DeepSeek-R1 response time: ~30–120 seconds (reasoning model is slower but higher quality)
 - `deepseek-reasoner` does not support `response_format: json_object`; output format is enforced via prompt engineering
 - PipeLLM does not support file upload; only Qwen supports `file_upload` mode
 - Recommended browsers: Chrome / Edge
+- **Model cache location**: On first run, MinerU / Docling models are auto-downloaded into `backend/.mineru_cache` (ModelScope source) and `backend/.hf_cache` (HuggingFace mirror), keeping the C drive clean
+- **Engine switching**: Set env var `PDF_PARSER_ENGINE` to `mineru` / `docling` / `auto` (default `auto` = MinerU primary + Docling fallback)
 
 ---
 
@@ -370,7 +376,26 @@ GraDesign_one/
 
 ## License
 
-MIT
+This project's own source code is released under the **MIT License**.
+
+### Third-Party Notices
+
+This project integrates the following third-party open-source components, each governed by its own license:
+
+| Component | Version | License | Repository |
+|-----------|---------|---------|-----------|
+| **MinerU** | `>=3.1.0` | [MinerU Open Source License](https://github.com/opendatalab/MinerU/blob/master/LICENSE.md) (based on Apache 2.0 with commercial clauses) | https://github.com/opendatalab/MinerU |
+| **Docling** | `2.15.1` | [MIT License](https://github.com/docling-project/docling/blob/main/LICENSE) | https://github.com/docling-project/docling |
+| **PyMuPDF** | `1.23.8` | [AGPL-3.0](https://github.com/pymupdf/PyMuPDF/blob/main/COPYING) | https://github.com/pymupdf/PyMuPDF |
+| **pdfplumber** | - | [MIT License](https://github.com/jsvine/pdfplumber/blob/stable/LICENSE.txt) | https://github.com/jsvine/pdfplumber |
+| **reportlab** | `4.0.0` | [BSD License](https://www.reportlab.com/software/opensource/) | https://www.reportlab.com/ |
+| **Flask** | `2.3.0` | [BSD-3-Clause](https://github.com/pallets/flask/blob/main/LICENSE.txt) | https://github.com/pallets/flask |
+| **Vue 3** | `3.x` | [MIT License](https://github.com/vuejs/core/blob/main/LICENSE) | https://github.com/vuejs/core |
+
+> ⚠️ **MinerU License note**: Since 3.1.0, MinerU migrated from AGPLv3 to the MinerU Open Source License (based on Apache 2.0 with additional commercial clauses). If you plan to use this project commercially, please review MinerU's official LICENSE and evaluate compliance first.
+> ⚠️ **PyMuPDF License note**: PyMuPDF is AGPL-3.0. For closed-source commercial distribution, consider purchasing its commercial license or switching to an MIT/BSD-licensed alternative.
+
+You must comply with each of the above licenses when using the full source code and all its dependencies.
 
 ---
 

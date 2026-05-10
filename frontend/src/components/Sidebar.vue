@@ -14,18 +14,20 @@
     </div>
     
     <div class="tab-content" :class="{ 'chat-mode': activeTab === 'chat' }">
-      <Transition name="fade" mode="out-in">
-        <KeypointsTab v-if="activeTab === 'keypoints'" @scroll-to="handleScrollTo" />
-        <SummaryTab v-else-if="activeTab === 'summary'" />
-        <StatisticsTab v-else-if="activeTab === 'statistics'" />
-        <AiChatTab v-else-if="activeTab === 'chat'" />
-      </Transition>
+      <!-- KeepAlive 缓存各 Tab：首次挂载后不再销毁重建，切换 Tab 无卡顿 -->
+      <KeepAlive>
+        <component
+          :is="currentTabComponent"
+          :key="activeTab"
+          @scroll-to="handleScrollTo"
+        />
+      </KeepAlive>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import KeypointsTab from './KeypointsTab.vue'
 import SummaryTab from './SummaryTab.vue'
 import StatisticsTab from './StatisticsTab.vue'
@@ -40,6 +42,15 @@ const tabs = [
   { id: 'statistics', label: '统计', icon: '📊' },
   { id: 'chat', label: 'AI 对话', icon: '🤖' }
 ]
+
+// 动态组件映射，配合 KeepAlive 持久化实例
+const tabComponents = {
+  keypoints: KeypointsTab,
+  summary: SummaryTab,
+  statistics: StatisticsTab,
+  chat: AiChatTab
+}
+const currentTabComponent = computed(() => tabComponents[activeTab.value])
 
 const handleScrollTo = (highlightId) => {
   emit('scroll-to', highlightId)

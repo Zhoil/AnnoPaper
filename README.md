@@ -13,11 +13,11 @@
     <img src="https://img.shields.io/badge/Version-v3.1.1-orange.svg" alt="Version" />
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
   </p>
-  <p><strong>基于 Vue 3 + Flask + Docling 结构化解析 + 多模型 LLM 引擎的 AI 文档深度分析与物理标注系统</strong></p>
-  <p>📚 Docling 驱动文档结构化解析 · 🎯 字符级精准坐标定位标注 · 🧠 多模型 AI 深度分析 · 📄 PDF/DOCX/HTML/URL 全格式支持</p>
+  <p><strong>基于 Vue 3 + Flask + MinerU / Docling 双引擎结构化解析 + 多模型 LLM 引擎的 AI 文档深度分析与物理标注系统</strong></p>
+  <p>📚 MinerU 首选 / Docling 兜底双引擎解析 · 🎯 字符级精准坐标定位标注 · 🧠 多模型 AI 深度分析 · 📄 PDF/DOCX/HTML/URL 全格式支持</p>
 </div>
 
-> 💡 **Docling** 作为本项目的**核心文档解析引擎**，提供了高级文档结构化提取能力（支持 OCR），能够智能识别表格、图片、公式等复杂元素，并自动输出结构化内容，显著提升了对复杂学术论文和报告的解析精度。当 Docling 不可用时，系统自动降级到 PyMuPDF 基础解析，确保服务弹性。
+> 💡 **MinerU + Docling 双引擎架构**：系统以 **MinerU 3.x**（OpenDataLab 开源，OmniDocBench v1.5 SOTA 86.2 分）作为首选 PDF 解析器，在中文论文、公式、表格场景下显著优于纯 Docling；当 MinerU 不可用或解析失败时，自动兜底到 **Docling**（IBM Research 开源）；两者皆失败时最终降级 PyMuPDF 纯文本解析。可通过环境变量 `PDF_PARSER_ENGINE = mineru | docling | auto` 显式切换引擎。所有模型权重统一缓存到项目本地 `backend/.mineru_cache` 与 `backend/.hf_cache`，不污染系统盘。
 
 ---
 
@@ -42,13 +42,16 @@
 | SQLite | 分析记录持久化存储 |
 | python-dotenv | 环境变量管理（API 密钥隔离） |
 | jieba | 中文分词（关键词统计备用） |
-| Docling | 高级文档结构化解析（OCR 可选） |
+| **MinerU 3.x** | **首选** PDF 结构化解析引擎（中文 OCR / LaTeX 公式 / HTML 表格 / 长文滑动窗口） |
+| Docling | 兜底 PDF 结构化解析引擎（支持 OCR 可选） |
 
-### PDF 处理（三库协同）
+### PDF 处理管线
 | 技术 | 职责 |
 |------|------|
-| **PyMuPDF (fitz)** | 图片提取、元数据读取、PDF 页面叠加合并、Docling 降级备选 |
-| **pdfplumber** | 字符级精确坐标提取、表格识别 |
+| **MinerU (pipeline 后端)** | DocLayoutYOLO 版面 + PaddleOCR + UnetTable + Unimernet 公式，产出结构化 JSON |
+| **Docling** | 兜底结构化解析，MinerU 失败时自动切换 |
+| **PyMuPDF (fitz)** | 图片提取、元数据读取、PDF 页面叠加合并、最终兜底的纯文本解析 |
+| **pdfplumber** | 标注阶段的字符级精确坐标提取 |
 | **reportlab** | 创建透明高亮覆盖层（矢量图形绘制） |
 
 ### 大模型 API（三引擎可切换）
@@ -83,10 +86,10 @@
       ▼
 ┌─────────────────────────────────────────────────┐
 │                DocumentParser                   │
-│  .pdf  → EnhancedPDFParser / DoclingParser      │
-│            ├── pdfplumber: 逐页提取文字+表格     │
-│            ├── PyMuPDF:    提取图片+元数据       │
-│            ├── Docling:    结构化深度解析（可选） │
+│  .pdf  → PDFParser（引擎路由器）                 │
+│            ├── MinerU:     首选结构化解析（SOTA） │
+│            ├── Docling:    兜底结构化解析         │
+│            ├── PyMuPDF:    最终兜底纯文本         │
 │            └── 输出: text + structured_content  │
 │  .docx → python-docx                            │
 │  .doc  → win32com 子进程（解决 COM/STA 冲突）   │
@@ -316,7 +319,8 @@ GraDesign_one/
 │   ├── app.py                  # Flask 主应用，RESTful 路由 + /api/providers
 │   ├── llm_service.py          # 多提供商 LLM 服务（DeepSeek / Qwen / PipeLLM）
 │   ├── text_analyzer.py        # 文本分析器：两阶段分析、Map-Reduce、PDF 标注
-│   ├── pdf_parser_enhanced.py  # 增强 PDF 解析器（文字+表格+图片）
+│   ├── pdf_parser.py           # PDF 引擎路由器（MinerU 首选 / Docling 兜底 / PyMuPDF 最终兜底）
+│   ├── pdf_parser_mineru.py    # MinerU 解析器封装（pipeline 后端，统一输出 schema）
 │   ├── pdf_parser_docling.py   # Docling PDF 解析器（结构化提取+降级）
 │   ├── document_parser.py      # 文档入口：PDF/DOCX/DOC/HTML/URL 分发
 │   ├── web_parser_enhanced.py  # 增强网页解析器
@@ -352,12 +356,14 @@ GraDesign_one/
 
 ## 注意事项
 
-- 文件大小上限：16 MB（>50 MB 的 PDF 自动降级到 PyMuPDF 解析）
+- 文件大小上限：16 MB（PDF 解析内部阈值：MinerU 80 MB / Docling 50 MB，超限自动降级 PyMuPDF 纯文本）
 - `.doc` 格式解析需要本机安装 Microsoft Word（通过 win32com 调用）
 - DeepSeek-R1 响应时间约 30-120 秒（推理模型较慢但质量高）
 - `deepseek-reasoner` 不支持 `response_format: json_object`，系统已通过提示词约束输出格式
 - PipeLLM 不支持文件直传，仅 Qwen 支持 `file_upload` 模式
 - 建议使用 Chrome / Edge 浏览器
+- **模型缓存位置**：首次运行会自动下载 MinerU / Docling 模型到 `backend/.mineru_cache`（ModelScope 源）与 `backend/.hf_cache`（HuggingFace 镜像源），不占用 C 盘系统空间
+- **引擎切换**：环境变量 `PDF_PARSER_ENGINE` 可设为 `mineru` / `docling` / `auto`（默认 auto = MinerU 首选 + Docling 兜底）
 
 ---
 
@@ -373,7 +379,26 @@ GraDesign_one/
 
 ## License
 
-MIT
+本项目代码遵循 **MIT License**。
+
+### 第三方组件授权声明（Third-Party Notices）
+
+本项目集成了以下第三方开源组件，各自遵循其原始许可证：
+
+| 组件 | 版本 | 许可证 | 项目地址 |
+|------|------|--------|---------|
+| **MinerU** | `>=3.1.0` | [MinerU Open Source License](https://github.com/opendatalab/MinerU/blob/master/LICENSE.md)（基于 Apache License 2.0，含商用附加条款） | https://github.com/opendatalab/MinerU |
+| **Docling** | `2.15.1` | [MIT License](https://github.com/docling-project/docling/blob/main/LICENSE) | https://github.com/docling-project/docling |
+| **PyMuPDF** | `1.23.8` | [AGPL-3.0](https://github.com/pymupdf/PyMuPDF/blob/main/COPYING) | https://github.com/pymupdf/PyMuPDF |
+| **pdfplumber** | - | [MIT License](https://github.com/jsvine/pdfplumber/blob/stable/LICENSE.txt) | https://github.com/jsvine/pdfplumber |
+| **reportlab** | `4.0.0` | [BSD License](https://www.reportlab.com/software/opensource/) | https://www.reportlab.com/ |
+| **Flask** | `2.3.0` | [BSD-3-Clause](https://github.com/pallets/flask/blob/main/LICENSE.txt) | https://github.com/pallets/flask |
+| **Vue 3** | `3.x` | [MIT License](https://github.com/vuejs/core/blob/main/LICENSE) | https://github.com/vuejs/core |
+
+> ⚠️ **MinerU 授权说明**：MinerU 自 3.1.0 起从 AGPLv3 迁移到 MinerU Open Source License（基于 Apache 2.0，含若干商业附加条款）。如将本项目用于商业场景，请先阅读 MinerU 官方 LICENSE 并评估合规性。
+> ⚠️ **PyMuPDF 授权说明**：PyMuPDF 为 AGPL-3.0，若本项目用于闭源商用分发，请考虑其商业许可或改用 MIT/BSD 替代方案。
+
+使用本项目的完整源码及其所有依赖前，请遵守上述各自的许可证条款。
 
 ---
 

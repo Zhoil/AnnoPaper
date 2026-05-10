@@ -7,15 +7,24 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-# ── Docling / HuggingFace 模型缓存路径配置 ─────────────────
-# 将模型下载到项目本地目录，避免占用 C 盘空间
-# 必须在 import docling 之前设置
+# ── 模型缓存路径统一配置（Docling + MinerU，全部落盘 D:\ 项目本地）──
+# 必须在 import docling / mineru 之前设置
 backend_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Docling 系模型（通过 HuggingFace）
 hf_cache_dir = os.path.join(backend_dir, '.hf_cache')
 os.makedirs(hf_cache_dir, exist_ok=True)
 os.environ['HF_HOME'] = hf_cache_dir
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'  # 国内镜像加速
-print(f"📦 HuggingFace 模型缓存路径: {hf_cache_dir}")
+
+# MinerU 模型（默认走 ModelScope，国内更稳；也可改 'huggingface'、'local'）
+mineru_cache_dir = os.path.join(backend_dir, '.mineru_cache')
+os.makedirs(mineru_cache_dir, exist_ok=True)
+os.environ.setdefault('MINERU_MODEL_SOURCE', 'modelscope')
+os.environ['MODELSCOPE_CACHE'] = mineru_cache_dir
+# 若切换到 huggingface 源，MinerU 会复用同一个 HF_HOME，无需额外配置
+print(f"📦 模型缓存路径 → HF: {hf_cache_dir}")
+print(f"📦 模型缓存路径 → MinerU({os.environ['MINERU_MODEL_SOURCE']}): {mineru_cache_dir}")
 
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
