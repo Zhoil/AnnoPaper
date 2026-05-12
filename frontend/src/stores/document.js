@@ -270,11 +270,12 @@ export const useDocumentStore = defineStore('document', {
     },
 
     // 发送 AI 对话消息
-    async sendChatMessage(message, chatHistory = []) {
+    async sendChatMessage(message, chatHistory = [], options = {}) {
       const doc = this.currentDocument
       let documentContext = ''
       // 上传后会在文档对象中写入 record_id，历史详情的字段名为 id
       const analysisId = doc?.record_id ?? doc?.id ?? null
+      const ragMode = options.ragMode || 'auto'
 
       if (doc) {
         const keypoints = (doc.keypoints || [])
@@ -297,11 +298,17 @@ export const useDocumentStore = defineStore('document', {
           message,
           document_context: documentContext,
           chat_history: chatHistory,
-          analysis_id: analysisId
+          analysis_id: analysisId,
+          rag_mode: ragMode
         })
 
         if (response.data.success) {
-          return response.data.response
+          return {
+            content: response.data.response,
+            ragUsed: !!response.data.rag_used,
+            ragMode: response.data.rag_mode || 'none',
+            ragHits: response.data.rag_hits || []
+          }
         }
         throw new Error(response.data.error || 'AI 响应失败')
       } catch (error) {

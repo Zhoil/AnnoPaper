@@ -317,13 +317,93 @@ def retrieve(query: str,
     return out
 
 
+# ───────────────────────── 全文扫描与意图识别 ─────────────────────────
+
+# 全局性问题关键词：触发则会从 BM25 召回 top-k 切换为全文扫描
+GLOBAL_INTENT_KEYWORDS = [
+    # 涵盖性词汇
+    '总结', '概括', '摘要', '概述', '概览', '综述', '综合', '整体', '整篇',
+    '全文', '通篇', '文章内容', '文档内容', '主要内容', '核心内容',
+    '主要观点', '核心观点', '主要论点', '核心论点', '主要观念',
+    '讲什么', '讲的是什么', '讲了什么', '说的是什么', '写的是什么',
+    '关于什么', '讨论什么', '破题', '中心思想', '中心论题',
+    '整个文档', '整个文章', '通读', '通览', '简述', '试着总结',
+    # 英文
+    'summary', 'summarize', 'summarise', 'overview', 'overall', 'in general',
+    'main idea', 'main point', 'key point', 'whole document', 'entire document',
+    'tl;dr', 'tldr', 'what is this about', 'what does this paper'
+]
+
+
+def detect_global_intent(query: str) -> bool:
+    """启发式判断用户问题是否属于全局性问题，命中则切全文扫描。"""
+    if not query:
+        return False
+    q = query.lower()
+    for kw in GLOBAL_INTENT_KEYWORDS:
+        if kw in q or kw in query:
+            return True
+    return False
+
+
+def retrieve_full_scan(chunks: List[Dict], max_chars: int = 10000) -> List[Dict]:
+    """全文扫描：按原始顺序返回所有 chunks，内容总量接近 max_chars 时会被裁剪。
+
+    策略：先按顺序填充，预算快溯时优先保留每页的首段，避免前半部占满、后半部全丢。
+    """
+    if not chunks:
+        return []
+    total = sum(len(c.get('content', '')) for c in chunks)
+    if total <= max_chars:
+        return [dict(c) for c in chunks]
+
+    # 超出预算：按页抽稀，优先保留每页第一个 chunk，剩余预算均匀补充后续 chunk
+    by_page: Dict[int, List[Dict]] = {}
+    order: List[int] = []
+    for c in chunks:
+        p = c.get('page', 0) or 0
+        if p not in by_page:
+            by_page[p] = []
+            order.append(p)
+        by_page[p].append(c)
+
+    picked: List[Dict] = []
+    used = 0
+    # 第一轮：每页首段
+    for p in order:
+        first = by_page[p][0]
+        body_len = len(first.get('content', ''))
+        if used + body_len > max_chars:
+            break
+        picked.append(dict(first))
+        used += body_len
+    # 第二轮：按原顺序补充其他 chunk
+    existing_ids = {c.get('idx') for c in picked}
+    for c in chunks:
+        if c.get('idx') in existing_ids:
+            continue
+        body_len = len(c.get('content', ''))
+        if used + body_len > max_chars:
+            continue
+        picked.append(dict(c))
+        used += body_len
+    picked.sort(key=lambda x: x.get('idx', 0))
+    return picked
+
+
 def format_context(retrieved: List[Dict], max_chars: int = 2800) -> str:
-    """将召回片段格式化为 prompt 可用的上下文字符串。"""
+    """将召回片段格式化为 prompt 可用的上下文字符串。按 idx/page 顺序排版，便于全文模式阅读。"""
     if not retrieved:
         return ''
+    # 排序：有 score 的按分数降序，无 score（全文扫描）按 idx 升序
+    has_score = any('score' in c for c in retrieved)
+    ordered = sorted(
+        retrieved,
+        key=lambda c: (-(c.get('score') or 0), c.get('idx', 0))
+    ) if has_score else sorted(retrieved, key=lambda c: (c.get('page', 0), c.get('idx', 0)))
     lines = []
     total = 0
-    for c in retrieved:
+    for c in ordered:
         page = c.get('page', 0)
         idx = c.get('idx', 0)
         src = c.get('source_type', 'text')

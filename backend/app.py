@@ -531,37 +531,60 @@ def compare_documents():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """AI 对话接口：若带 analysis_id 则启用 BM25 检索增强。"""
+    """AI 对话接口：支持 BM25 检索与全文扫描两种 RAG 模式。
+
+    请求体字段：
+      - message 用户消息
+      - document_context 前端拼接的文档概览（标题摘要关键点）
+      - chat_history 对话历史
+      - analysis_id 对应 analysis_records.id，用于加载 RAG 索引
+      - rag_mode 可选 auto | retrieve | full，默认 auto（根据问题自动选择）
+    """
     try:
         data = request.json
         message = data.get('message', '').strip()
         document_context = data.get('document_context', '')
         chat_history = data.get('chat_history', [])
         analysis_id = data.get('analysis_id')
+        rag_mode = (data.get('rag_mode') or 'auto').lower()
+        if rag_mode not in ('auto', 'retrieve', 'full'):
+            rag_mode = 'auto'
 
         if not message:
             return jsonify({'error': '消息不能为空'}), 400
 
-        # ── RAG 检索增强：按问题动态召回相关段落拼入 document_context ──
+        # ── RAG 检索：auto 模式自动判别全局性问题 ──
         rag_hits = []
+        rag_used_mode = 'none'
         if analysis_id is not None:
             try:
                 aid = int(analysis_id)
                 loaded = rag_indexer.load_index(aid, db)
                 if loaded:
                     chunks, bm25 = loaded
-                    rag_hits = rag_indexer.retrieve(message, chunks, bm25, top_k=5)
+                    use_full = (
+                        rag_mode == 'full'
+                        or (rag_mode == 'auto' and rag_indexer.detect_global_intent(message))
+                    )
+                    if use_full:
+                        rag_hits = rag_indexer.retrieve_full_scan(chunks, max_chars=10000)
+                        rag_used_mode = 'full'
+                    else:
+                        rag_hits = rag_indexer.retrieve(message, chunks, bm25, top_k=5)
+                        rag_used_mode = 'retrieve' if rag_hits else 'none'
             except (TypeError, ValueError):
                 pass
             except Exception as e:
                 print(f'⚠️ RAG 检索失败（降级到截断上下文）: {e}')
 
         if rag_hits:
-            retrieved_block = rag_indexer.format_context(rag_hits)
+            ctx_budget = 10000 if rag_used_mode == 'full' else 2800
+            retrieved_block = rag_indexer.format_context(rag_hits, max_chars=ctx_budget)
+            header = '文档全文内容' if rag_used_mode == 'full' else '从文档中检索到的相关段落'
             if document_context:
-                document_context = f"{document_context}\n\n===== 从文档中检索到的相关段落 =====\n{retrieved_block}"
+                document_context = f"{document_context}\n\n===== {header} =====\n{retrieved_block}"
             else:
-                document_context = f"===== 从文档中检索到的相关段落 =====\n{retrieved_block}"
+                document_context = f"===== {header} =====\n{retrieved_block}"
 
         response = analyzer.llm_service.chat(message, document_context, chat_history)
 
@@ -570,6 +593,7 @@ def chat():
                 'success': True,
                 'response': response,
                 'rag_used': bool(rag_hits),
+                'rag_mode': rag_used_mode,
                 'rag_hits': [
                     {'idx': h.get('idx'), 'page': h.get('page'),
                      'source_type': h.get('source_type'), 'score': h.get('score')}

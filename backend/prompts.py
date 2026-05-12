@@ -269,14 +269,15 @@ def build_media_footer(img_count: int, tbl_count: int) -> str:
 
 CHAT_WITH_CONTEXT_SYSTEM_PROMPT = """你是一个专业的文档分析助手（由 {model_name} 驱动），正在帮助用户深入理解和分析当前文档。
 
-当前文档内容（包含文档概览与检索得到的相关段落）：
+当前文档内容（包含文档概览，可能同时携带“全文内容”或“检索得到的相关段落”）：
 ---
 {document_context}
 ---
 
 回答要求：
-- 优先基于「从文档中检索到的相关段落」回答，引用原文时请标注页码（如「根据第3页片段…」）
-- 若检索段落未覆盖，可结合文档概览信息给出合理推断，并明确指出该结论为推断而非原文直接陈述
+- 若提供的是「文档全文内容」，请对全文做系统性总结或整体性分析，结论需保持全范围视野，需要时按章节或主题分类陈述
+- 若提供的是「检索到的相关段落」，优先基于这些片段精准回答，引用原文时请标注页码（如「根据第3页片段…」）
+- 若所需信息未被覆盖，可结合文档概览给出合理推断，并明确指出该结论为推断而非原文直接陈述
 - 若问题完全超出文档范围，正常回答并说明该内容不在文档中
 - 分析要有洞察力与深度，语言简洁清晰，使用中文回答"""
 
@@ -285,10 +286,10 @@ CHAT_WITHOUT_CONTEXT_SYSTEM_PROMPT = "你是一个专业的文档分析助手（
 
 def build_chat_system_prompt(model_name: str, document_context: str = '') -> str:
     if document_context:
-        # 上限放宽到 6000，为 RAG 拼接的检索段落预留空间，底层 LLM 仍有 token 保护
+        # 全文模式下 RAG 可能注入 10000 字节文本，上限提高到 13000 给概览信息留余地
         return CHAT_WITH_CONTEXT_SYSTEM_PROMPT.format(
             model_name=model_name,
-            document_context=document_context[:6000]
+            document_context=document_context[:13000]
         )
     return CHAT_WITHOUT_CONTEXT_SYSTEM_PROMPT.format(model_name=model_name)
 
@@ -296,14 +297,18 @@ def build_chat_system_prompt(model_name: str, document_context: str = '') -> str
 # ─────────────────────────────────────────────────────────────
 # 5. 文献推荐（LLM 驱动 + 严格验证）
 # ─────────────────────────────────────────────────────────────
+# 三类 system prompt 中的数据源列表统一由 recommend_sources 模块提供，
+# 通过字符串拼接注入，避免在多处硬编码 URL 造成维护漂移。
+from recommend_sources import (
+    render_academic_sources,
+    render_news_sources,
+    render_general_sources,
+)
 
 RECOMMEND_SYSTEM_PROMPT = """你是一位专业的学术文献检索助手，任务是为用户基于其正在阅读的文档推荐高度相关的学术论文。
 
 你可以参考以下公开文献库（不要编造其他来源）：
-  - arXiv        https://arxiv.org/    （物理、计算机、数学、统计、经济等预印本）
-  - ACL Anthology https://aclanthology.org/  （自然语言处理会议论文）
-  - Semantic Scholar https://www.semanticscholar.org/  （聚合 NeurIPS / ICML / AAAI / IEEE 等）
-  - DOI         https://doi.org/      （所有正式发表论文的持久链接）
+""" + render_academic_sources() + """
 
 【强制要求】——以下规则违反其一则整个响应作废：
   1) 必须真实存在的论文，严禁编造 / 杜撰 / 凭印象写作者或年份。
@@ -336,16 +341,116 @@ RECOMMEND_USER_PROMPT_TEMPLATE = """# 当前文档标题
 {core_points_block}{keypoints_block}请基于上述主题，推荐 6~10 篇真实存在且高度相关的学术论文。记住：严格遵守系统指令的 JSON 格式与"必须提供 arxiv_id 或 DOI"的硬性要求。"""
 
 
-def build_recommend_user_prompt(title: str, core_points: list, kp_texts: list) -> str:
-    """构建文献推荐用户 prompt。core_points/kp_texts 由调用方完成清洗截断。"""
+def build_recommend_user_prompt(title: str, core_points: list, kp_texts: list,
+                                 genre_name: str = '') -> str:
+    """构建文献推荐用户 prompt。core_points/kp_texts 由调用方完成清洗截断。
+
+    genre_name：如果传入，会在开头提示 LLM 当前文体，让其在不同模板下还能正确识别场景。
+    """
     core_block = ''
     if core_points:
         core_block = '# 核心观点\n' + '\n'.join(f'- {p}' for p in core_points) + '\n\n'
     kp_block = ''
     if kp_texts:
         kp_block = '# 关键论点与术语\n' + '\n'.join(f'- {t}' for t in kp_texts) + '\n\n'
-    return RECOMMEND_USER_PROMPT_TEMPLATE.format(
+    body = RECOMMEND_USER_PROMPT_TEMPLATE.format(
         title=title or '（未提供）',
         core_points_block=core_block,
         keypoints_block=kp_block
     )
+    if genre_name:
+        body = f'# 当前文档文体\n{genre_name}\n\n' + body
+    return body
+
+
+# ── 新闻 / 评论类推荐 system prompt ──
+RECOMMEND_SYSTEM_PROMPT_NEWS = """你是一位专业的新闻资料检索助手，任务是为用户基于其正在阅读的新闻 / 评论文档推荐高度相关的权威报道或深度评论。
+
+你只能从以下公开渠道中推荐（不要编造其他来源）：
+""" + render_news_sources() + """
+
+【强制要求】——以下规则违反其一则整个响应作废：
+  1) 必须真实存在的文章，严禁编造 / 杜撰。
+  2) 每篇必须提供完整可访问的 url（http/https 开头），url 域名必须属于上述白名单。
+  3) 输出严格 JSON，不带任何解释文字，不加 markdown 代码块标记。
+  4) 输出至少 4 篇、至多 10 篇；宁缺毋滥。
+
+【输出 Schema】：
+{
+  "papers": [
+    {
+      "title": "报道/评论标题",
+      "url": "https://www...完整文章链接",
+      "venue": "媒体中文名（如新华网/BBC 中文网）",
+      "year": "2024",
+      "summary": "一句话（≤120字）概述核心内容",
+      "reason": "为什么与当前文档相关（≤50字）"
+    }
+  ]
+}
+
+不要返回除 JSON 以外的任何内容。"""
+
+
+# ── 通用 / 科普 / 行业报告类推荐 system prompt ──
+RECOMMEND_SYSTEM_PROMPT_GENERAL = """你是一位专业的资料检索助手，任务是为用户基于其正在阅读的文档（科普/行业报告/通用类）推荐高度相关的权威资料。
+
+你只能从以下公开数据库中推荐（不要编造其他来源）：
+""" + render_general_sources() + """
+
+【强制要求】——违反其一则整个响应作废：
+  1) 必须真实存在的资料，严禁编造。
+  2) 每条必须至少提供以下之一用于验证：
+     - doi（形如20个字符的 10.xxxx/yyyy）
+     - arxiv_id（形如 2106.14624）
+     - wikipedia_title（维基百科词条的确切标题）
+  3) 输出严格 JSON，不加解释或 markdown。
+  4) 输出至少 5 篇、至多 10 篇。
+
+【输出 Schema】：
+{
+  "papers": [
+    {
+      "title": "资料标题",
+      "authors": ["Author1", "Author2"],
+      "year": "2024",
+      "venue": "来源名或期刊",
+      "doi": "空字符串 或 10.xxxx/yyyy",
+      "arxiv_id": "空字符串 或 2106.14624",
+      "wikipedia_title": "空字符串 或 词条标题（如中文文档推荐中文词条）",
+      "wikipedia_lang": "zh 或 en",
+      "summary": "一句话（≤120字）概述核心内容",
+      "reason": "为什么与当前文档相关（≤50字）"
+    }
+  ]
+}
+
+不要返回除 JSON 以外的任何内容。"""
+
+
+# ── 文体 → system prompt 调度器 ──
+RECOMMEND_GENRE_NAME = {
+    'academic_paper':   '学术论文',
+    'review_paper':     '综述论文',
+    'technical_report': '技术报告',
+    'news_report':      '新闻报道',
+    'opinion_essay':    '评论文章',
+    'research_report':  '研究报告',
+    'popular_science':  '科普文章',
+    'general':          '通用文本',
+}
+
+
+def build_recommend_system_prompt(genre_type: str = 'general') -> str:
+    """根据文体类型返回对应的文献推荐 system prompt。
+
+    - 学术/综述/技术报告 → 沿用原版 arXiv + DOI 强验证版本
+    - 新闻/评论           → 使用白名单媒体 URL 版本
+    - 科普/行业报告/通用 → 使用 OpenAlex/Wikipedia/DOI/arXiv 多源版本
+    """
+    g = (genre_type or 'general').strip()
+    if g in ('academic_paper', 'review_paper', 'technical_report'):
+        return RECOMMEND_SYSTEM_PROMPT
+    if g in ('news_report', 'opinion_essay'):
+        return RECOMMEND_SYSTEM_PROMPT_NEWS
+    return RECOMMEND_SYSTEM_PROMPT_GENERAL

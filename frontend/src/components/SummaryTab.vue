@@ -147,14 +147,28 @@ const recordId = computed(() => {
   return doc?.record_id || doc?.id || null
 })
 
-// sources 新结构：llm_total / arxiv_verified / doi_verified / dropped。
+// sources 新结构：llm_total / arxiv_verified / doi_verified / openalex_verified / wikipedia_verified / news_verified / dropped / genre。
 // 同时兼容旧结构 arxiv / semantic_scholar。
+const GENRE_LABEL = {
+  academic_paper: '学术论文',
+  review_paper: '综述论文',
+  technical_report: '技术报告',
+  news_report: '新闻报道',
+  opinion_essay: '评论文章',
+  research_report: '研究报告',
+  popular_science: '科普文章',
+  general: '通用文本'
+}
 const sourcesText = computed(() => {
   const s = recommendations.value.sources || {}
   const parts = []
+  if (s.genre && GENRE_LABEL[s.genre]) parts.push(`文体 ${GENRE_LABEL[s.genre]}`)
   if (typeof s.llm_total === 'number') parts.push(`LLM 候选 ${s.llm_total}`)
   if (typeof s.arxiv_verified === 'number' && s.arxiv_verified) parts.push(`arXiv 验证 ${s.arxiv_verified}`)
   if (typeof s.doi_verified === 'number' && s.doi_verified) parts.push(`DOI 验证 ${s.doi_verified}`)
+  if (typeof s.openalex_verified === 'number' && s.openalex_verified) parts.push(`OpenAlex 验证 ${s.openalex_verified}`)
+  if (typeof s.wikipedia_verified === 'number' && s.wikipedia_verified) parts.push(`维基 验证 ${s.wikipedia_verified}`)
+  if (typeof s.news_verified === 'number' && s.news_verified) parts.push(`新闻 验证 ${s.news_verified}`)
   if (typeof s.dropped === 'number' && s.dropped) parts.push(`丢弃 ${s.dropped}`)
   if (!parts.length) {
     if (s.arxiv) parts.push(`arXiv ${s.arxiv}`)
@@ -198,9 +212,16 @@ onUnmounted(() => {
 })
 
 function sourceLabel(src) {
-  if (src === 'arxiv') return 'arXiv'
-  if (src === 'semantic_scholar') return 'S2'
-  return src || 'paper'
+  const m = {
+    arxiv: 'arXiv',
+    semantic_scholar: 'S2',
+    openalex: 'OpenAlex',
+    wikipedia: '维基',
+    news: '新闻',
+    gdelt: 'GDELT',
+    crossref: 'Crossref'
+  }
+  return m[src] || src || 'paper'
 }
 
 async function loadRecommendations(force = false) {
@@ -599,6 +620,31 @@ const trackStyle = computed(() => {
 
 .source-semantic_scholar {
   background: linear-gradient(135deg, #1857b6 0%, #3a78d8 100%);
+  color: white;
+}
+
+.source-openalex {
+  background: linear-gradient(135deg, #0a7a62 0%, #1aa886 100%);
+  color: white;
+}
+
+.source-wikipedia {
+  background: linear-gradient(135deg, #4a4a4a 0%, #6a6a6a 100%);
+  color: white;
+}
+
+.source-news {
+  background: linear-gradient(135deg, #a85b2b 0%, #d87a3a 100%);
+  color: white;
+}
+
+.source-gdelt {
+  background: linear-gradient(135deg, #6b4fb2 0%, #9575d8 100%);
+  color: white;
+}
+
+.source-crossref {
+  background: linear-gradient(135deg, #2b6cb0 0%, #4a90e2 100%);
   color: white;
 }
 

@@ -1,14 +1,15 @@
 """
-文献推荐服务：基于文档标题/关键词调用 arXiv 与 Semantic Scholar 公共 API，
-聚合去重后返回 Top-N 相关论文。
+文献推荐服务：arXiv + Semantic Scholar 公共 API 聚合检索，
+另对外提供 OpenAlex / Wikipedia 验证端的节流与 HTTP 工具。
 
-- arXiv: Atom XML，覆盖 CS / Math / Physics 等，无需 API Key
-- Semantic Scholar Graph API: 覆盖 ACL / NeurIPS / ICML 等会议论文，无需 API Key
+- arXiv:           Atom XML，CS / Math / Physics 预印本，无需 Key
+- Semantic Scholar：ACL / NeurIPS / ICML / IEEE 等会议期刊，无需 Key
+- OpenAlex / Wikipedia：仅供 llm_recommender 中的 verify_by_* 链路做验证
 
 特性：
-- 1 req/s 节流，避免触发公共接口限流
+- 分源节流，避免触发公共接口限流
 - 本地文件缓存（TTL 7 天）在 backend/.scholar_cache 目录下
-- 任何一路失败自动降级，不阻塞另一路；两路都失败则返回空列表
+- 任何一路失败自动降级，不阻塞其他分支
 """
 
 import os
@@ -26,9 +27,12 @@ from typing import List, Dict, Optional
 
 USER_AGENT = "AnnoPaper/1.0 (research-assistant; mailto:research@annopaper.local)"
 CACHE_TTL_SECONDS = 7 * 24 * 3600
-# 分源限流：arXiv 宽松，Semantic Scholar 公共接口很严格（建议≥ 3s）
-_MIN_INTERVAL = {'arxiv': 1.0, 's2': 3.5}
-_last_request_ts = {'arxiv': 0.0, 's2': 0.0}
+# 分源限流：arXiv 官方建议≥ 3s，Semantic Scholar 公共接口频繁 429（建议≥ 5s）
+# OpenAlex / Wikipedia 官方允许较高 QPS，保留 0.2s 作为礼貌性节流
+_MIN_INTERVAL = {'arxiv': 3.0, 's2': 5.0, 'openalex': 0.2, 'wikipedia': 0.2}
+_last_request_ts = {'arxiv': 0.0, 's2': 0.0, 'openalex': 0.0, 'wikipedia': 0.0}
+# 429 冷却时间戳：当命中 429 时把对应 source 的冷却截止时间推后，下次 _throttle 会先等尽
+_cooldown_until = {'arxiv': 0.0, 's2': 0.0, 'openalex': 0.0, 'wikipedia': 0.0}
 
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 _CACHE_DIR = os.path.join(_BACKEND_DIR, '.scholar_cache')
@@ -98,15 +102,24 @@ def _cache_put(key: str, data):
 
 
 def _throttle(source: str):
+    """双重节流：常规最小间隔 + 429 冷却时间。哪个更晚用哪个。"""
+    now = time.time()
     interval = _MIN_INTERVAL.get(source, 1.0)
-    elapsed = time.time() - _last_request_ts.get(source, 0.0)
-    if elapsed < interval:
-        time.sleep(interval - elapsed)
+    wait_normal = interval - (now - _last_request_ts.get(source, 0.0))
+    wait_cooldown = _cooldown_until.get(source, 0.0) - now
+    wait = max(wait_normal, wait_cooldown, 0.0)
+    if wait > 0:
+        time.sleep(wait)
     _last_request_ts[source] = time.time()
 
 
-def _http_get(url: str, timeout: int = 10, max_retries: int = 3) -> str:
-    """带 SSL 降级与 429/5xx 指数退避重试的 GET。"""
+def _http_get(url: str, timeout: int = 10, max_retries: int = 3,
+              source: Optional[str] = None) -> str:
+    """带 SSL 降级与 429/5xx 指数退避重试的 GET。
+
+    source：如果传入，429 时会把该 source 的冷却时间推后，防止外层紧接着
+    的下一次请求继续撞 429。
+    """
     req = urllib.request.Request(url, headers={
         'User-Agent': USER_AGENT,
         'Accept': 'application/json, application/atom+xml;q=0.9, */*;q=0.8'
@@ -121,15 +134,27 @@ def _http_get(url: str, timeout: int = 10, max_retries: int = 3) -> str:
                 return resp.read().decode('utf-8', errors='replace')
         except urllib.error.HTTPError as e:
             last_err = e
-            # 429 / 503 退避；尊重 Retry-After
+            # 429 / 5xx 退避；尊重 Retry-After
             if e.code in (429, 500, 502, 503, 504):
                 retry_after = 0
                 try:
                     retry_after = int(e.headers.get('Retry-After') or 0)
                 except Exception:
                     retry_after = 0
-                sleep_s = retry_after if retry_after > 0 else (2 ** attempt) + random.uniform(0, 1.0)
-                time.sleep(min(sleep_s, 15.0))
+                # 429 使用更大基数 + 最小 5s，防止群集效应
+                if e.code == 429:
+                    base = max(5.0, (2 ** attempt) * 2.0 + random.uniform(0, 2.0))
+                else:
+                    base = (2 ** attempt) + random.uniform(0, 1.0)
+                sleep_s = retry_after if retry_after > 0 else base
+                sleep_s = min(sleep_s, 20.0)
+                # 429：把冷却推后，令后续调用者 _throttle 时也等待
+                if e.code == 429 and source and source in _cooldown_until:
+                    _cooldown_until[source] = max(
+                        _cooldown_until.get(source, 0.0),
+                        time.time() + sleep_s,
+                    )
+                time.sleep(sleep_s)
                 continue
             raise
         except urllib.error.URLError as e:
@@ -180,7 +205,7 @@ def arxiv_search(query: str, max_results: int = 5) -> List[Dict]:
 
     try:
         _throttle('arxiv')
-        xml_text = _http_get(url, timeout=10)
+        xml_text = _http_get(url, timeout=10, source='arxiv')
     except Exception as e:
         print(f"⚠️ arXiv 检索失败: {e}")
         return []
@@ -243,7 +268,7 @@ def semantic_scholar_search(query: str, max_results: int = 5) -> List[Dict]:
 
     try:
         _throttle('s2')
-        body = _http_get(url, timeout=15, max_retries=4)
+        body = _http_get(url, timeout=15, max_retries=4, source='s2')
         data = json.loads(body)
     except urllib.error.HTTPError as e:
         # 429：部分源不可用，降级为空列表，不阻塞 arXiv 分支
@@ -281,22 +306,73 @@ def semantic_scholar_search(query: str, max_results: int = 5) -> List[Dict]:
     return results
 
 
+# ───────────────────────── 关键词抽取工具 ─────────────────────────
+
+def _extract_keywords(text: str, topk: int = 10) -> List[str]:
+    """从中文/混合文本中抽取关键词，用于降低整句中文直接送检造成的召回损失。
+    优先使用 jieba.analyse.extract_tags，不可用时退化为正则+词频。"""
+    if not text:
+        return []
+    try:
+        import jieba.analyse  # 延迟加载，避免循环依赖
+        kws = jieba.analyse.extract_tags(text, topK=topk)
+        if kws:
+            return [w for w in kws if w.strip()]
+    except Exception:
+        pass
+    import re
+    from collections import Counter
+    toks = re.findall(r'[A-Za-z][A-Za-z\-]{2,}|[\u4e00-\u9fff]{2,}', text)
+    cnt = Counter(toks)
+    return [w for w, _ in cnt.most_common(topk)]
+
+
+def _reconstruct_abstract(inv_idx) -> str:
+    """还原 OpenAlex 的倒排索引摘要为可读文本。"""
+    if not isinstance(inv_idx, dict) or not inv_idx:
+        return ''
+    pos_word = []
+    for word, positions in inv_idx.items():
+        for p in (positions or []):
+            pos_word.append((p, word))
+    pos_word.sort(key=lambda x: x[0])
+    return ' '.join(w for _, w in pos_word)
+
+
 # ───────────────────────── 组合检索 ─────────────────────────
 
-def build_query_from_record(record: Dict) -> str:
-    """从数据库记录中构建检索 query：优先标题 + 摘要高权重关键词。"""
-    parts = []
-    title = record.get('title') or ''
-    if title and title != record.get('filename'):
-        parts.append(title)
+def build_query_from_record(record: Dict, prefer: str = 'thesis') -> str:
+    """从数据库记录中构建检索 query。
 
+    prefer='thesis'（默认，新）：
+        优先使用 LLM 分析已经产出的主旨 JSON（summary.core_points 前 2 条）+ title，
+        再经 jieba TF-IDF 关键词化，确保中文整句不会拖垮外部 API 的召回率。
+    prefer='title'：
+        旧行为，兼容内部其他调用方。
+    """
     summary = record.get('summary') or {}
-    core_points = summary.get('core_points') or []
-    if core_points and not parts:
-        parts.append(str(core_points[0])[:80])
-
-    # 从 keypoints 中抽取前 3 个 annotation_label 或 content 前 8 字
+    core_points = [str(p).strip() for p in (summary.get('core_points') or []) if str(p).strip()]
+    title = (record.get('title') or '').strip()
+    filename = record.get('filename') or ''
     keypoints = record.get('keypoints') or []
+
+    if prefer == 'thesis' and (core_points or title):
+        raw_parts = []
+        if title and title != filename:
+            raw_parts.append(title)
+        raw_parts.extend(core_points[:2])
+        raw_text = ' '.join(raw_parts)
+        kws = _extract_keywords(raw_text, topk=10)
+        if kws:
+            return ' '.join(kws)[:200]
+        return raw_text[:200]
+
+    # 兼容旧行为
+    parts = []
+    if title and title != filename:
+        parts.append(title)
+    if core_points and not parts:
+        parts.append(core_points[0][:80])
     kp_terms = []
     for kp in keypoints[:6]:
         label = (kp.get('annotation_label') or '').strip()
@@ -308,10 +384,7 @@ def build_query_from_record(record: Dict) -> str:
                 kp_terms.append(txt)
     if kp_terms:
         parts.append(' '.join(kp_terms[:3]))
-
-    query = ' '.join(parts).strip()
-    # arXiv/S2 query 过长会降低相关性，截断到 200 字符
-    return query[:200]
+    return ' '.join(parts).strip()[:200]
 
 
 def _dedup_and_rank(*lists: List[Dict]) -> List[Dict]:
@@ -334,7 +407,7 @@ def _dedup_and_rank(*lists: List[Dict]) -> List[Dict]:
 
 def recommend_for_record(record: Dict, max_results: int = 6) -> Dict:
     """
-    聚合 arXiv + Semantic Scholar 推荐。
+    聚合 arXiv + Semantic Scholar 推荐（LLM 路径失败时的兜底降级方案）。
     返回：{ query, results: [...], sources: {...} }
     """
     query = build_query_from_record(record)

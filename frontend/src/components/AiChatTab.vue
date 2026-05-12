@@ -14,10 +14,14 @@
       </button>
     </div>
 
-    <!-- 文档上下文提示 -->
+    <!-- 文档上下文提示 + RAG 模式切换 -->
     <div v-if="hasDocument" class="doc-context-badge">
       <span class="doc-badge-icon">📄</span>
       <span class="doc-badge-text">已载入文档：{{ documentTitle }}</span>
+      <label class="rag-switch" :title="'开启后强制将文档全文传给 AI，适合总结与全局性问题'">
+        <input type="checkbox" v-model="fullScan" />
+        <span class="rag-switch-label">全文模式</span>
+      </label>
     </div>
     <div v-else class="doc-context-badge no-doc">
       <span class="doc-badge-icon">⚠️</span>
@@ -107,6 +111,7 @@ let messageId = 0
 
 const hasDocument = computed(() => documentStore.hasDocument)
 const documentTitle = computed(() => documentStore.getCurrentDocument?.title || '当前文档')
+const fullScan = ref(false)
 
 // 配置 marked 渲染选项
 marked.setOptions({
@@ -188,12 +193,22 @@ const sendMessage = async () => {
     .map(m => ({ role: m.role, content: m.content }))
 
   try {
-    const response = await documentStore.sendChatMessage(text, chatHistory)
+    const result = await documentStore.sendChatMessage(text, chatHistory, {
+      ragMode: fullScan.value ? 'full' : 'auto'
+    })
+    // 兼容旧返回结构（字符串）与新返回结构（对象）
+    const replyContent = typeof result === 'string' ? result : (result?.content || '')
+    const ragMode = typeof result === 'string' ? '' : (result?.ragMode || '')
+    const ragTag = ragMode === 'full'
+      ? '\n\n<small style="opacity:0.55">✨ 已采用全文模式进行回答</small>'
+      : (ragMode === 'retrieve'
+        ? '\n\n<small style="opacity:0.55">🔍 已基于相关片段检索回答</small>'
+        : '')
 
     messages.value.push({
       id: ++messageId,
       role: 'assistant',
-      content: response,
+      content: replyContent + ragTag,
       time: formatTime()
     })
   } catch (error) {
@@ -301,6 +316,37 @@ const sendMessage = async () => {
 
 .no-doc .doc-badge-text {
   color: #a08a6e;
+}
+
+.rag-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(58,159,216,0.08);
+  border: 1px solid rgba(58,159,216,0.2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.rag-switch:hover {
+  background: rgba(58,159,216,0.15);
+  border-color: rgba(58,159,216,0.35);
+}
+
+.rag-switch input {
+  cursor: pointer;
+  accent-color: #3a9fd8;
+}
+
+.rag-switch-label {
+  font-size: 11px;
+  color: #3a9fd8;
+  font-weight: 600;
+  user-select: none;
 }
 
 /* 消息区域 */
