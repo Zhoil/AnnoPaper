@@ -10,6 +10,9 @@ reportlab==4.0.0
 markdown==3.5.1
 PyMuPDF==1.23.8
 Pillow>=11.0.0
+# numpy 锁定在 1.x：MinerU / Docling / opencv-python / scikit-image 等 C 扩展
+# 在 numpy 2.x 下会报 "dtype size changed, may indicate binary incompatibility"
+numpy>=1.26.0,<2.0.0
 # PDF structured parser: MinerU primary (MinerU Open Source License, based on Apache 2.0)
 # Chinese-paper OCR / LaTeX formulas / HTML tables SOTA on OmniDocBench v1.5
 mineru[pipeline]>=3.1.0

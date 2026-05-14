@@ -257,6 +257,7 @@ class Database:
             'highlights': analysis_result.get('highlights', []),
             'annotated_url': analysis_result.get('annotated_url'), # 提取标注URL
             'genre': analysis_result.get('genre'),  # 文体检测结果透传
+            'argument_logic_graph': analysis_result.get('argument_logic_graph', {'nodes': [], 'edges': []}),
             'created_at': row[4],
             'analysis_result': analysis_result
         }

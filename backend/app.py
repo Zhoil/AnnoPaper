@@ -86,7 +86,8 @@ def _record_to_upload_response(record, extra=None):
         'summary': record.get('summary', {}),
         'statistics': record.get('statistics', {}),
         'highlights': record.get('highlights', []),
-        'annotated_url': record.get('annotated_url')
+        'annotated_url': record.get('annotated_url'),
+        'argument_logic_graph': record.get('argument_logic_graph', {'nodes': [], 'edges': []})
     }
     if extra:
         payload.update(extra)
@@ -319,7 +320,8 @@ def upload_file():
             'statistics': analysis_result['statistics'],
             'highlights': analysis_result['highlights'],
             'annotated_url': annotated_url,
-            'genre': analysis_result.get('genre')  # 文体检测结果
+            'genre': analysis_result.get('genre'),  # 文体检测结果
+            'argument_logic_graph': analysis_result.get('argument_logic_graph', {'nodes': [], 'edges': []})
         })
     
     except Exception as e:
@@ -411,7 +413,8 @@ def upload_url():
             'highlights': analysis_result['highlights'],
             'annotated_url': annotated_url,
             'is_web': True,  # 标记为网页类型
-            'genre': analysis_result.get('genre')  # 文体检测结果
+            'genre': analysis_result.get('genre'),  # 文体检测结果
+            'argument_logic_graph': analysis_result.get('argument_logic_graph', {'nodes': [], 'edges': []})
         })
     
     except Exception as e:

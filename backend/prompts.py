@@ -92,6 +92,24 @@ ANALYZE_SYSTEM_PROMPT = """你是一个顶尖的文献情报分析专家（{mode
     }}
   ],
   "summary": "一句话概括全文核心",
+  "argument_logic_graph": {{
+    "nodes": [
+      {{
+        "id": "n1",
+        "label": "4-10字节点标题",
+        "type": "premise | intermediate | conclusion | counter | assumption",
+        "summary": "20-40字本节点核心主张"
+      }}
+    ],
+    "edges": [
+      {{
+        "from": "n1",
+        "to": "n2",
+        "relation": "support | rebut | cause | parallel | progression",
+        "note": "可选，10-20字边标签（非必需）"
+      }}
+    ]
+  }},
   "title": "反映文章主旨的标题"
 }}
 </output_format>
@@ -123,6 +141,38 @@ ANALYZE_SYSTEM_PROMPT = """你是一个顶尖的文献情报分析专家（{mode
 - category: "核心技术" | "方法论" | "研究对象" | "评价指标" | "应用领域" | "其他"
 - 排序：按 weight 从高到低
 </top_terms_rules>
+
+<argument_logic_graph_rules>
+提炼作者在全文中展开论证的**推理关系图**（不是复述 core_arguments，而是用更抽象的节点表达前提→结论的推理链）：
+
+节点规则：
+- 节点数 4-10 个，过少信息不足，过多视觉杂乱
+- 至少包含 1 个 type="premise"（前提/出发点）和 1 个 type="conclusion"（最终结论）
+- id 必须使用 "n1", "n2", "n3" ... 这种短字符串，严禁使用中文或空格
+- label：4-10 字中文节点标题，简洁可读
+- summary：20-40 字，清晰表达该节点承担的主张或作用
+- type 必须严格从以下五选一：
+  * premise       —— 事实前提、背景假设、已知条件
+  * intermediate  —— 中间推论、桥接论断
+  * conclusion    —— 最终结论、核心主张
+  * counter       —— 反例、对立观点、作者要反驳的对象
+  * assumption    —— 隐含假设、未明言的前提
+
+边规则：
+- 边的 from / to 必须指向已存在的 node.id，禁止悬空引用
+- relation 必须严格从以下五选一：
+  * support      —— A 支持 B（最常见）
+  * rebut        —— A 反驳/削弱 B
+  * cause        —— A 导致 B（因果关系）
+  * parallel     —— A 与 B 并列，共同支撑下游
+  * progression  —— A 递进到 B（语义加强/范围扩大）
+- note 为可选字段，仅在关系含义不明显时给出 10-20 字说明
+
+整体要求：
+- 与 core_arguments **不重复**：core_arguments 是原文复制粘贴，argument_logic_graph 是抽象推理网络
+- 体现论证的**逻辑结构**而非时间顺序
+- 若文档过短或难以可靠提炼，允许返回 {{"nodes":[],"edges":[]}} 空图
+</argument_logic_graph_rules>
 
 <scoring>
 - 95-100：核心创新观点、颠覆性结论、独家数据

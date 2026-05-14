@@ -97,9 +97,22 @@
                 <span v-if="ev.page" class="ev-page">p.{{ ev.page }}</span>
               </div>
             </template>
-          </div>
+         </div>
         </div>
       </div>
+    </div>
+
+    <!-- 论证逻辑图（与上方 SVG 三层树并列，模型直接给出，支持拖拽调整） -->
+    <div v-if="showLogic" class="logic-panel logic-panel-extra">
+      <div class="logic-toolbar">
+        <div class="logic-title-inline">
+          <span class="logic-title-icon">🧩</span>
+          <span class="logic-title-text">论证逻辑图</span>
+          <span class="logic-title-sub">由模型提炼 · 可拖拽调整布局</span>
+        </div>
+        <div class="logic-hint">💡 拖动节点 / 滚轮缩放 / 右下角可 fit-view</div>
+      </div>
+      <ArgumentLogicGraph :graph="argumentLogicGraph" />
     </div>
 
     <div v-show="!showLogic" class="keypoints-list">
@@ -275,6 +288,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useDocumentStore } from '../stores/document'
+import ArgumentLogicGraph from './ArgumentLogicGraph.vue'
 
 const emit = defineEmits(['scroll-to'])
 const documentStore = useDocumentStore()
@@ -320,6 +334,14 @@ const keypoints = computed(() => {
 const recordId = computed(() => {
   const doc = documentStore.getCurrentDocument
   return doc?.record_id || doc?.id || null
+})
+
+// 模型给出的论证逻辑图（结构独立于 SVG 三层树）
+const argumentLogicGraph = computed(() => {
+  const doc = documentStore.getCurrentDocument
+  const g = doc?.argument_logic_graph
+  if (g && Array.isArray(g.nodes) && Array.isArray(g.edges)) return g
+  return { nodes: [], edges: [] }
 })
 
 // 论证链路数据：优先使用 logicTree.tree.points，回退到 keypoints 合成
@@ -892,6 +914,35 @@ watch([fullscreen, treePoints], async () => {
   border: 1px solid #e8dcc8;
   box-shadow: 0 4px 16px rgba(192, 144, 96, 0.08);
   animation: fadeIn 0.4s ease;
+}
+
+/* 论证逻辑图（下方并列面板）专属样式 */
+.logic-panel-extra {
+  background: linear-gradient(135deg, #fffdf9 0%, #fbf6ee 100%);
+  margin-bottom: 24px;
+}
+.logic-title-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.logic-title-icon {
+  font-size: 18px;
+}
+.logic-title-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: #5c4a38;
+  letter-spacing: 0.3px;
+}
+.logic-title-sub {
+  font-size: 12px;
+  color: #8a7e72;
+  padding-left: 4px;
+  border-left: 1px solid #e8dcc8;
+  margin-left: 4px;
 }
 
 .logic-toolbar {

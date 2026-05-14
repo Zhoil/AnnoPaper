@@ -135,7 +135,8 @@ class TextAnalyzer:
             'keypoints': keypoints,
             'summary': summary,
             'statistics': statistics,
-            'highlights': highlights
+            'highlights': highlights,
+            'argument_logic_graph': {'nodes': [], 'edges': []}
         }
     
     def _process_llm_result(self, text, llm_result):
@@ -224,8 +225,79 @@ class TextAnalyzer:
             'keypoints': matched_keypoints,
             'summary': summary,
             'statistics': statistics,
-            'highlights': highlights
+            'highlights': highlights,
+            'argument_logic_graph': self._sanitize_logic_graph(llm_result.get('argument_logic_graph'))
         }
+    
+    def _sanitize_logic_graph(self, raw):
+        """校验和清洗 LLM 输出的 argument_logic_graph。
+        
+        返回 {"nodes": [...], "edges": [...]}；非法输入时返回空图。
+        过滤规则：
+        - nodes / edges 必须为 list
+        - 非法 type / relation 回退到 intermediate / support
+        - 悬空边（from/to 不在 nodes.id 集合中）直接丢弃
+        """
+        empty = {'nodes': [], 'edges': []}
+        if not isinstance(raw, dict):
+            return empty
+        
+        raw_nodes = raw.get('nodes')
+        raw_edges = raw.get('edges')
+        if not isinstance(raw_nodes, list):
+            return empty
+        if not isinstance(raw_edges, list):
+            raw_edges = []
+        
+        valid_types = {'premise', 'intermediate', 'conclusion', 'counter', 'assumption'}
+        valid_relations = {'support', 'rebut', 'cause', 'parallel', 'progression'}
+        
+        clean_nodes = []
+        node_ids = set()
+        for n in raw_nodes:
+            if not isinstance(n, dict):
+                continue
+            nid = n.get('id')
+            if not isinstance(nid, str) or not nid.strip():
+                continue
+            nid = nid.strip()
+            if nid in node_ids:
+                continue
+            ntype = n.get('type') if n.get('type') in valid_types else 'intermediate'
+            clean_nodes.append({
+                'id': nid,
+                'label': str(n.get('label', '') or '').strip()[:40] or nid,
+                'type': ntype,
+                'summary': str(n.get('summary', '') or '').strip()[:120],
+            })
+            node_ids.add(nid)
+        
+        if not clean_nodes:
+            return empty
+        
+        clean_edges = []
+        for e in raw_edges:
+            if not isinstance(e, dict):
+                continue
+            efrom = e.get('from')
+            eto = e.get('to')
+            if not (isinstance(efrom, str) and isinstance(eto, str)):
+                continue
+            efrom = efrom.strip()
+            eto = eto.strip()
+            if efrom not in node_ids or eto not in node_ids:
+                continue
+            if efrom == eto:
+                continue
+            rel = e.get('relation') if e.get('relation') in valid_relations else 'support'
+            clean_edges.append({
+                'from': efrom,
+                'to': eto,
+                'relation': rel,
+                'note': str(e.get('note', '') or '').strip()[:40],
+            })
+        
+        return {'nodes': clean_nodes, 'edges': clean_edges}
     
     def _match_keypoints_to_text(self, text, llm_keypoints):
         """
