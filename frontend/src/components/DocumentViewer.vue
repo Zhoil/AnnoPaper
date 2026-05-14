@@ -9,67 +9,143 @@
     </div>
     
     <div class="document-body">
-      <!-- PDF 查看器 -->
-      <iframe 
-        v-if="document?.filename?.toLowerCase().endsWith('.pdf') && document?.annotated_url" 
-        :src="`${document.annotated_url}#toolbar=1&view=FitH`" 
-        class="pdf-viewer" 
-        ref="pdfIframe"
-      ></iframe>
-      
-      <!-- 网页HTML查看器：最大限度展示原始界面 -->
-      <iframe 
-        v-else-if="document?.is_web && document?.annotated_url"
-        :src="document.annotated_url"
-        class="web-viewer"
-        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-        referrerpolicy="no-referrer"
-        :style="{ minHeight: '600px' }"
-      ></iframe>
-      
-      <!-- 网页降级：Word样式格式化展示（无标注URL时） -->
-      <div v-else-if="document?.is_web && !document?.annotated_url" class="web-fallback">
-        <div class="web-fallback-toolbar">
-          <span class="toolbar-icon">🌐</span>
-          <span class="toolbar-text">网页内容 · 文档模式展示</span>
-        </div>
-        <div class="web-fallback-content" v-html="highlightedContent"></div>
-      </div>
-      
-      <!-- Word 文档：mammoth.js 格式化渲染 -->
-      <div v-else-if="isDocx" class="docx-preview">
-        <div class="docx-toolbar">
-          <div class="docx-toolbar-info">
-            <span class="toolbar-icon">📘</span>
-            <span class="toolbar-text">Word 文档 · 已保留原始格式</span>
-            <span v-if="docxLoading" class="loading-tag">⏳ 渲染中...</span>
-            <span v-else-if="docxError" class="error-tag">⚠️ 渲染失败，已降级为文本模式</span>
-            <span v-else class="ready-tag">✅ 渲染完成</span>
+      <!-- 注释宿主：所有格式共用，承载锚点/气泡/右键菜单 -->
+      <div
+        class="annot-host"
+        ref="annotHostRef"
+        @contextmenu.prevent="onContextMenu"
+      >
+        <!-- PDF 查看器 -->
+        <iframe
+          v-if="isPdfIframe"
+          :src="`${document.annotated_url}#toolbar=1&view=FitH`"
+          class="pdf-viewer"
+          ref="pdfIframe"
+        ></iframe>
+
+        <!-- 网页HTML查看器：最大限度展示原始界面 -->
+        <iframe
+          v-else-if="isWebIframe"
+          :src="document.annotated_url"
+          class="web-viewer"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+          referrerpolicy="no-referrer"
+          :style="{ minHeight: '600px' }"
+        ></iframe>
+
+        <!-- 网页降级：Word样式格式化展示（无标注URL时） -->
+        <div v-else-if="document?.is_web && !document?.annotated_url" class="web-fallback">
+          <div class="web-fallback-toolbar">
+            <span class="toolbar-icon">🌐</span>
+            <span class="toolbar-text">网页内容 · 文档模式展示</span>
           </div>
-          <button @click="handleDownload" class="download-btn">
-            📥 下载标注版文档
-          </button>
+          <div class="web-fallback-content" v-html="highlightedContent"></div>
         </div>
 
-        <!-- mammoth 渲染结果 -->
-        <div 
-          v-if="!docxError && docxHtmlContent"
-          class="docx-rendered"
-          v-html="docxHtmlContent"
-        ></div>
+        <!-- Word 文档：mammoth.js 格式化渲染 -->
+        <div v-else-if="isDocx" class="docx-preview">
+          <div class="docx-toolbar">
+            <div class="docx-toolbar-info">
+              <span class="toolbar-icon">📘</span>
+              <span class="toolbar-text">Word 文档 · 已保留原始格式</span>
+              <span v-if="docxLoading" class="loading-tag">⏳ 渲染中...</span>
+              <span v-else-if="docxError" class="error-tag">⚠️ 渲染失败，已降级为文本模式</span>
+              <span v-else class="ready-tag">✅ 渲染完成</span>
+            </div>
+            <button @click="handleDownload" class="download-btn">
+              📥 下载标注版文档
+            </button>
+          </div>
+          <div
+            v-if="!docxError && docxHtmlContent"
+            class="docx-rendered"
+            v-html="docxHtmlContent"
+          ></div>
+          <div v-else class="document-content" v-html="highlightedContent"></div>
+        </div>
 
-        <!-- 降级：纯文本显示 -->
+        <!-- 其他格式预览 -->
         <div v-else class="document-content" v-html="highlightedContent"></div>
+
+        <!-- iframe 格式：批注覆盖层（默认 pointer-events:none，开启批注模式后才接管右键） -->
+        <div
+          v-if="needsOverlay"
+          class="annot-iframe-overlay"
+          :class="{ 'is-active': annotMode }"
+          @contextmenu.prevent.stop="onContextMenu"
+        >
+          <span v-if="annotMode" class="overlay-hint">📝 批注模式 · 在任意位置右键添加注释 · 再次点击按钮退出</span>
+        </div>
+
+        <!-- 临时注释锚点 + 气泡（始终位于最上层） -->
+        <div
+          v-for="a in annotations"
+          :key="a.id"
+          class="annot-anchor"
+          :class="{ 'is-open': a.open }"
+          :style="{ left: a.x + 'px', top: a.y + 'px' }"
+          @click.stop="toggleAnnotation(a.id)"
+          @contextmenu.stop.prevent
+          :title="a.open ? '点击收起' : '点击展开注释'"
+        >
+          <span class="annot-sign">{{ a.open ? '−' : '+' }}</span>
+          <div
+            v-if="a.open"
+            class="annot-bubble"
+            @click.stop
+            @contextmenu.stop.prevent
+          >
+            <div class="annot-bubble-head">
+              <span class="annot-dot"></span>
+              <span class="annot-head-text">临时注释 · 仅本次会话</span>
+              <button
+                class="annot-del-btn"
+                title="删除该注释"
+                @click.stop="removeAnnotation(a.id)"
+              >✕</button>
+            </div>
+            <textarea
+              class="annot-textarea"
+              v-model="a.content"
+              wrap="off"
+              placeholder="在此输入注释…"
+              ref="annotTextareas"
+            ></textarea>
+          </div>
+        </div>
+
+        <!-- iframe 格式：批注模式切换按钮（浮于右上角） -->
+        <button
+          v-if="needsOverlay"
+          class="annot-mode-btn"
+          :class="{ 'is-active': annotMode }"
+          @click.stop="toggleAnnotMode"
+          :title="annotMode ? '退出批注模式（恢复 iframe 交互）' : '进入批注模式（接管右键以添加注释）'"
+        >
+          <span class="mode-icon">📝</span>
+          <span class="mode-text">{{ annotMode ? '退出批注' : '批注模式' }}</span>
+        </button>
       </div>
-      
-      <!-- 其他格式预览 -->
-      <div v-else class="document-content" v-html="highlightedContent"></div>
+
+      <!-- 右键浮层菜单（fixed 定位，所有格式共用） -->
+      <div
+        v-if="ctxMenu.show"
+        class="annot-ctx-menu"
+        :style="{ left: ctxMenu.screenX + 'px', top: ctxMenu.screenY + 'px' }"
+        @click.stop
+        @contextmenu.stop.prevent
+      >
+        <button class="annot-ctx-btn" @click="addAnnotationFromMenu">
+          <span class="ctx-icon">✎</span>
+          <span class="ctx-text">添加注释</span>
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, shallowRef, computed, watch } from 'vue'
+import { ref, shallowRef, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import mammoth from 'mammoth'
 import { useDocumentStore } from '../stores/document'
 import { useToast } from '../composables/useToast.js'
@@ -185,6 +261,110 @@ const loadDocxAsHtml = async () => {
 
 // 文档切换时重新渲染
 watch(document, loadDocxAsHtml, { immediate: true })
+
+// ============ 临时注释（仅前端、切文档/刷新自动清空、覆盖所有格式） ============
+const annotHostRef = ref(null)
+const annotTextareas = ref([])
+const annotations = ref([])
+const ctxMenu = reactive({
+  show: false,
+  screenX: 0,   // 菜单显示坐标（fixed，相对视口）
+  screenY: 0,
+  targetX: 0,   // 光标在宿主内部坐标（含 scroll）
+  targetY: 0
+})
+
+// 是否走 iframe（PDF / 网页带标注URL）：iframe 会接管右键，需要叠加 overlay 才能批注
+const isPdfIframe = computed(() =>
+  document.value?.filename?.toLowerCase().endsWith('.pdf') && !!document.value?.annotated_url
+)
+const isWebIframe = computed(() =>
+  document.value?.is_web && !!document.value?.annotated_url
+)
+const needsOverlay = computed(() => isPdfIframe.value || isWebIframe.value)
+
+// 批注模式开关：仅 iframe 类型用到（开启后 overlay 拦截右键，关闭后恢复 iframe 正常交互）
+const annotMode = ref(false)
+const toggleAnnotMode = () => {
+  annotMode.value = !annotMode.value
+  if (!annotMode.value) ctxMenu.show = false
+}
+
+// 切换文档时清空注释 + 重置批注模式（刷新页面由组件重建天然清空）
+watch(
+  () => document.value?.record_id ?? document.value?.filename ?? null,
+  () => {
+    annotations.value = []
+    ctxMenu.show = false
+    annotMode.value = false
+  }
+)
+
+// 右键：计算内部坐标并展示浮层菜单
+const onContextMenu = (e) => {
+  const host = annotHostRef.value
+  if (!host) return
+  const rect = host.getBoundingClientRect()
+  ctxMenu.targetX = e.clientX - rect.left + host.scrollLeft
+  ctxMenu.targetY = e.clientY - rect.top + host.scrollTop
+  // 菜单防越界：右/下边缘留 160×48 空间
+  const vw = window.innerWidth, vh = window.innerHeight
+  ctxMenu.screenX = Math.min(e.clientX, vw - 160)
+  ctxMenu.screenY = Math.min(e.clientY, vh - 52)
+  ctxMenu.show = true
+}
+
+// 点击"添加注释"：在右键位置插入 + 锚点
+const addAnnotationFromMenu = () => {
+  annotations.value.push({
+    id: Date.now() + Math.random(),
+    x: ctxMenu.targetX,
+    y: ctxMenu.targetY,
+    open: false,
+    content: ''
+  })
+  ctxMenu.show = false
+}
+
+// 切换 +/−
+const toggleAnnotation = (id) => {
+  const item = annotations.value.find(a => a.id === id)
+  if (!item) return
+  const willOpen = !item.open
+  // 只允许同时打开一个气泡
+  if (willOpen) annotations.value.forEach(a => { a.open = false })
+  item.open = willOpen
+  if (willOpen) {
+    nextTick(() => {
+      const ta = annotTextareas.value?.[annotTextareas.value.length - 1]
+      if (ta && typeof ta.focus === 'function') ta.focus()
+    })
+  }
+}
+
+// 删除单条注释
+const removeAnnotation = (id) => {
+  annotations.value = annotations.value.filter(a => a.id !== id)
+}
+
+// 全局点击：关菜单、关所有气泡（锚点/气泡内部已 stopPropagation）
+const onGlobalClick = () => {
+  ctxMenu.show = false
+  annotations.value.forEach(a => { if (a.open) a.open = false })
+}
+// 全局右键：若目标不在宿主内，关菜单
+const onGlobalContextMenu = (e) => {
+  const host = annotHostRef.value
+  if (!host || !host.contains(e.target)) ctxMenu.show = false
+}
+onMounted(() => {
+  window.addEventListener('click', onGlobalClick)
+  window.addEventListener('contextmenu', onGlobalContextMenu)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('click', onGlobalClick)
+  window.removeEventListener('contextmenu', onGlobalContextMenu)
+})
 
 // HTML 转义（仅对纯文本段使用，避免源文本里的 & < > 被当成 HTML）
 const escapeHtml = (s) => s
@@ -493,6 +673,86 @@ defineExpose({ scrollToHighlight })
   box-shadow: 0 4px 12px rgba(58, 159, 216, 0.3);
 }
 
+/* 注释宿主：所有格式共用容器，承担相对定位以让锚点叠加在任意展示区上 */
+.annot-host {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #f8f8f5;
+}
+
+/* iframe 模式覆盖层：默认 pointer-events:none 让 iframe 正常交互；开启批注后接管右键 */
+.annot-iframe-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: transparent;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.annot-iframe-overlay.is-active {
+  pointer-events: auto;
+  cursor: crosshair;
+  background: rgba(232, 138, 42, 0.04);
+  border: 2px dashed rgba(232, 138, 42, 0.55);
+}
+.overlay-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  background: linear-gradient(135deg, #fffdf7, #f5ecd7);
+  color: #8a6a3a;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #d5b878;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(120, 90, 40, 0.18);
+  pointer-events: none;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+}
+
+/* 批注模式切换按钮（仅 iframe 格式显示，浮于右上角） */
+.annot-mode-btn {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: linear-gradient(135deg, #fffdf7, #f5ecd7);
+  color: #5c4a38;
+  border: 1px solid #d5b878;
+  border-radius: 18px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(120, 90, 40, 0.18);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, color 0.15s ease;
+  user-select: none;
+}
+.annot-mode-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(120, 90, 40, 0.25);
+}
+.annot-mode-btn.is-active {
+  background: linear-gradient(135deg, #ffb347, #e88a2a);
+  color: #fff;
+  border-color: #c06617;
+  box-shadow: 0 4px 14px rgba(232, 138, 42, 0.45);
+}
+.annot-mode-btn .mode-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
 /* mammoth 渲染内容区 */
 .docx-rendered {
   flex: 1;
@@ -680,5 +940,219 @@ defineExpose({ scrollToHighlight })
   50%  { transform: scale(1.08); box-shadow: 0 0 30px rgba(102, 126, 234, 0.8); background-color: rgba(102, 126, 234, 0.4) !important; }
   80%  { transform: scale(1.02); box-shadow: 0 0 15px rgba(102, 126, 234, 0.4); }
   100% { transform: scale(1);    box-shadow: 0 0 0 rgba(102, 126, 234, 0); }
+}
+
+/* ============ 临时注释：右键菜单 / 锚点 / 气泡 ============ */
+
+/* 右键浮层菜单：简洁米白系 */
+.annot-ctx-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 148px;
+  padding: 6px;
+  background: #fffdf7;
+  border: 1px solid #e8dcc8;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(92, 74, 56, 0.18), 0 3px 8px rgba(92, 74, 56, 0.08);
+  animation: annotMenuIn 0.12s ease-out;
+}
+@keyframes annotMenuIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.annot-ctx-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #5c4a38;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+  text-align: left;
+}
+.annot-ctx-btn:hover {
+  background: linear-gradient(135deg, #fdf6e6 0%, #f5ecd7 100%);
+  color: #3a2a18;
+}
+.annot-ctx-btn .ctx-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffb347, #e88a2a);
+  color: #fff;
+  font-size: 12px;
+  box-shadow: 0 2px 4px rgba(232, 138, 42, 0.35);
+}
+
+/* +/− 锚点：小巧圆形，居中符号 */
+.annot-anchor {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffb347 0%, #e88a2a 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 3px 8px rgba(232, 138, 42, 0.45), 0 1px 2px rgba(0,0,0,0.08);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  z-index: 20;
+  user-select: none;
+}
+.annot-anchor:hover {
+  transform: translate(-50%, -50%) scale(1.1);
+  box-shadow: 0 5px 14px rgba(232, 138, 42, 0.6), 0 2px 4px rgba(0,0,0,0.12);
+}
+.annot-anchor.is-open {
+  background: linear-gradient(135deg, #e88a2a 0%, #c06617 100%);
+  z-index: 30;
+}
+.annot-sign {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  display: block;
+  text-align: center;
+}
+
+/* 气泡：长 7×一号字 ≈ 243px，宽 5×一号字 ≈ 173px，以锚点居中向上弹出 */
+.annot-bubble {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 243px;
+  height: 173px;
+  background: linear-gradient(135deg, #fffdf7 0%, #fdf6e6 55%, #f5ecd7 100%);
+  border: 1px solid #d5b878;
+  border-radius: 12px;
+  box-shadow:
+    0 14px 32px rgba(120, 90, 40, 0.22),
+    0 4px 10px rgba(120, 90, 40, 0.10),
+    inset 0 1px 0 rgba(255,255,255,0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  cursor: default;
+  animation: annotBubbleIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+@keyframes annotBubbleIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.94); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1); }
+}
+/* 气泡底部指向锚点的小三角 */
+.annot-bubble::before,
+.annot-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+}
+.annot-bubble::before {
+  bottom: -8px;
+  border-top: 8px solid #d5b878;
+}
+.annot-bubble::after {
+  bottom: -7px;
+  border-top: 8px solid #f5ecd7;
+}
+
+/* 气泡头部：独特装饰条 + 关闭按钮 */
+.annot-bubble-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: linear-gradient(90deg, rgba(232,138,42,0.14) 0%, rgba(232,138,42,0) 100%);
+  border-bottom: 1px solid rgba(213, 184, 120, 0.5);
+  font-size: 11px;
+  color: #8a6a3a;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.annot-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffb347, #e88a2a);
+  flex-shrink: 0;
+}
+.annot-head-text {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.annot-del-btn {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: #8a6a3a;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.annot-del-btn:hover {
+  background: rgba(232, 138, 42, 0.18);
+  color: #c92a2a;
+}
+
+/* textarea：wrap=off + overflow:auto 实现左右和上下滚动 */
+.annot-textarea {
+  flex: 1;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #3a2a18;
+  white-space: pre;        /* 配合 wrap="off" 禁止自动换行 */
+  overflow: auto;          /* 横向/纵向双向滚动 */
+  scrollbar-width: thin;
+  scrollbar-color: #d5b878 transparent;
+}
+.annot-textarea::placeholder {
+  color: #b8a07c;
+  font-style: italic;
+}
+.annot-textarea::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.annot-textarea::-webkit-scrollbar-thumb {
+  background: #d5b878;
+  border-radius: 3px;
+}
+.annot-textarea::-webkit-scrollbar-track {
+  background: transparent;
 }
 </style>
