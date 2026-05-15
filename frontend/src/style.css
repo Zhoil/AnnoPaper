@@ -69,27 +69,20 @@ body {
   transform: translateX(100%);
 }
 
-/* 按钮基础样式 */
+/* 按钮基础样式：仅保留必要重置；过渡与 hover 动效由各组件 scoped 样式按需提供，
+   避免全局 transition:all + transform/box-shadow 触发整页大量按钮的过渡与重绘。 */
 button {
   cursor: pointer;
   border: none;
   outline: none;
-  transition: all 0.3s ease;
+  background: none;
+  font: inherit;
+  color: inherit;
 }
 
-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(58, 159, 216, 0.2);
-}
-
-button:active {
-  transform: translateY(0);
-}
-
-/* 输入框基础样式 */
+/* 输入框基础样式：仅去掉默认 outline，过渡由组件按需控制 */
 input, textarea {
   outline: none;
-  transition: border-color 0.3s ease;
 }
 
 input:focus, textarea:focus {

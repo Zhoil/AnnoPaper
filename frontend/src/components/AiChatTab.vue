@@ -55,7 +55,7 @@
             <span v-else>🤖</span>
           </div>
           <div class="message-bubble" :class="{ 'md-bubble': msg.role === 'assistant' }">
-            <div class="message-content" v-html="formatMessage(msg.content, msg.role)"></div>
+            <div class="message-content" v-html="renderMessage(msg)"></div>
             <div class="message-time">{{ msg.time }}</div>
           </div>
         </div>
@@ -152,6 +152,16 @@ const formatMessage = (content, role) => {
     return formatAssistantMessage(content)
   }
   return formatUserMessage(content)
+}
+
+// 渲染消息：在 message 对象上缓存 _html，避免每次响应式重渲染都调用 marked.parse（长对话下主要卡顿源）
+const renderMessage = (msg) => {
+  if (!msg) return ''
+  if (msg._html !== undefined) return msg._html
+  msg._html = msg.role === 'assistant'
+    ? formatAssistantMessage(msg.content || '')
+    : formatUserMessage(msg.content || '')
+  return msg._html
 }
 
 const scrollToBottom = async () => {

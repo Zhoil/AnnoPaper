@@ -196,9 +196,12 @@ function relayout() {
   rebuild()
 }
 
-watch(() => props.graph, () => {
-  rebuild()
-}, { deep: true })
+// 仅监听 props.graph 引用变化 + 节点/边数量变化，避免 deep:true 对大图递归创建 Proxy、
+// 减少调用方任何节点字段微调都触发全量 rebuild 的开销
+watch(
+  () => [props.graph, props.graph?.nodes?.length || 0, props.graph?.edges?.length || 0],
+  () => { rebuild() }
+)
 
 onMounted(() => {
   rebuild()

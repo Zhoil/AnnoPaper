@@ -482,6 +482,18 @@ function scheduleComputeFull() {
   })
 }
 
+// ResizeObserver 节流：拖拽窗口时避免频繁 RAF 风暴，80ms 合并一次重算
+let roTimer = null
+let roTimerFull = null
+function throttledScheduleCompute() {
+  if (roTimer) return
+  roTimer = setTimeout(() => { roTimer = null; scheduleCompute() }, 80)
+}
+function throttledScheduleComputeFull() {
+  if (roTimerFull) return
+  roTimerFull = setTimeout(() => { roTimerFull = null; scheduleComputeFull() }, 80)
+}
+
 function onWindowResize() {
   scheduleCompute()
   if (fullscreen.value) scheduleComputeFull()
@@ -489,8 +501,8 @@ function onWindowResize() {
 
 onMounted(() => {
   if (typeof ResizeObserver !== 'undefined') {
-    ro = new ResizeObserver(() => scheduleCompute())
-    roFull = new ResizeObserver(() => scheduleComputeFull())
+    ro = new ResizeObserver(() => throttledScheduleCompute())
+    roFull = new ResizeObserver(() => throttledScheduleComputeFull())
   }
   window.addEventListener('resize', onWindowResize)
 })
@@ -501,6 +513,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onWindowResize)
   if (rafId) cancelAnimationFrame(rafId)
   if (rafIdFull) cancelAnimationFrame(rafIdFull)
+  if (roTimer) { clearTimeout(roTimer); roTimer = null }
+  if (roTimerFull) { clearTimeout(roTimerFull); roTimerFull = null }
 })
 
 // 观察内嵌图：showLogic 打开或数据变化时重算

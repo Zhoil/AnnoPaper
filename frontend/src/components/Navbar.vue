@@ -82,7 +82,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useDocumentStore } from '../stores/document'
 import { useToast } from '../composables/useToast.js'
 
@@ -111,9 +111,21 @@ const onModelChange = (event) => {
   documentStore.setApiModel(event.target.value)
 }
 
-// 组件加载时获取 provider 列表
+// 点击外部关闭下拉菜单：具名 handler + 生命周期绑解避免多个实例堆积
+const onDocumentClick = (e) => {
+  if (!e.target.closest('.menu-item')) {
+    showDropdown.value = false
+  }
+}
+
+// 组件加载时获取 provider 列表 + 绑定全局点击
 onMounted(() => {
   documentStore.fetchProviders()
+  document.addEventListener('click', onDocumentClick)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
 })
 
 const toggleDropdown = () => {
@@ -150,13 +162,6 @@ const handleClear = () => {
   }
   showDropdown.value = false
 }
-
-// 点击外部关闭下拉菜单
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.menu-item')) {
-    showDropdown.value = false
-  }
-})
 </script>
 
 <style scoped>
