@@ -5,7 +5,7 @@
       <span class="arg-empty-text">LLM 未输出逻辑推理图</span>
       <span class="arg-empty-hint">可能因文档过短或结构不清晰</span>
     </div>
-    <div v-else class="arg-canvas">
+    <div v-else class="arg-canvas" :class="{ 'arg-canvas-full': expanded }">
       <div class="arg-legend">
         <div class="legend-group">
           <span class="legend-title">节点：</span>
@@ -24,13 +24,17 @@
           <span class="legend-item rel-progression">⇒ 递进</span>
         </div>
         <button class="arg-btn" @click="relayout">🔁 重置布局</button>
+        <button class="arg-btn primary" @click="toggleExpand">
+          <span v-if="expanded">✖ 关闭全屏</span>
+          <span v-else>🔍 放大查看</span>
+        </button>
       </div>
       <VueFlow
         v-model:nodes="flowNodes"
         v-model:edges="flowEdges"
-        :default-viewport="{ zoom: 0.9 }"
-        :min-zoom="0.3"
-        :max-zoom="2.0"
+        :default-viewport="{ zoom: 0.85 }"
+        :min-zoom="0.2"
+        :max-zoom="4.0"
         :nodes-draggable="true"
         :nodes-connectable="false"
         :elements-selectable="true"
@@ -46,7 +50,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { VueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -61,6 +65,28 @@ const props = defineProps({
     type: Object,
     default: () => ({ nodes: [], edges: [] })
   }
+})
+
+// 全屏放大状态
+const expanded = ref(false)
+function toggleExpand() {
+  expanded.value = !expanded.value
+  // 全屏切换后重建布局以适配新画布尺寸
+  setTimeout(() => rebuild(), 60)
+}
+// ESC 快捷键关闭全屏
+function onEscKey(e) {
+  if (e.key === 'Escape' && expanded.value) {
+    expanded.value = false
+    setTimeout(() => rebuild(), 60)
+  }
+}
+onMounted(() => {
+  rebuild()
+  document.addEventListener('keydown', onEscKey)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onEscKey)
 })
 
 const hasGraph = computed(() => {
@@ -90,13 +116,12 @@ const RELATION_STYLE = {
   progression: { stroke: '#a78bfa', dash: '',       width: 2.8, arrow: 'arrowclosed', label: '递进' },
 }
 
-// ---------- 自动分层布局 ----------
-// 主线：premise(x=0) → intermediate(x=1) → conclusion(x=2)
-// 辅线：counter / assumption 放在下方（y 偏移）
+// ---------- 自动分层布局（支持多层 intermediate 拆分） ----------
+// 主线：premise → intermediate(1) → intermediate(2) → conclusion
+// 辅线：counter / assumption 偏置
 function layoutNodes(rawNodes) {
-  const COL_X = { premise: 40, intermediate: 340, conclusion: 700 }
-  const SUB_Y_OFFSET = 80
-  const ROW_H = 120
+  const ROW_H = 100   // 缩小行高以容纳更多节点
+  const COL_GAP = 280 // 列间距
 
   const groups = { premise: [], intermediate: [], conclusion: [], counter: [], assumption: [] }
   rawNodes.forEach(n => {
@@ -104,24 +129,47 @@ function layoutNodes(rawNodes) {
     groups[t].push(n)
   })
 
+  // 当 intermediate 超过 4 个时，拆分为两列，展现多层推理深度
+  const midNodes = groups.intermediate
+  const midCol1 = midNodes.slice(0, Math.ceil(midNodes.length / 2))
+  const midCol2 = midNodes.slice(Math.ceil(midNodes.length / 2))
+  const hasDoubleIntermediate = midCol2.length > 0
+
+  // 计算各列 X 坐标
+  const baseX = 40
+  const colPremise = baseX
+  const colMid1 = baseX + COL_GAP
+  const colMid2 = hasDoubleIntermediate ? baseX + COL_GAP * 2 : colMid1
+  const colConclusion = hasDoubleIntermediate ? baseX + COL_GAP * 3 : baseX + COL_GAP * 2
+
   const positioned = []
-  const putColumn = (list, baseX, yStart) => {
+  const putColumn = (list, x, centerY) => {
     const total = list.length
     list.forEach((n, i) => {
-      const y = yStart + i * ROW_H - ((total - 1) * ROW_H) / 2
-      positioned.push({ raw: n, x: baseX, y })
+      const y = centerY + i * ROW_H - ((total - 1) * ROW_H) / 2
+      positioned.push({ raw: n, x, y })
     })
   }
 
-  const mainCenterY = 240
-  putColumn(groups.premise, COL_X.premise, mainCenterY)
-  putColumn(groups.intermediate, COL_X.intermediate, mainCenterY)
-  putColumn(groups.conclusion, COL_X.conclusion, mainCenterY)
+  // 主布局基准 Y
+  const allMainCount = groups.premise.length + midNodes.length + groups.conclusion.length
+  const mainCenterY = Math.max(200, allMainCount * 28)
 
-  // counter：放在 conclusion 上方偏右
-  putColumn(groups.counter, COL_X.intermediate + 140, mainCenterY - (groups.intermediate.length + 1) * ROW_H / 2 - SUB_Y_OFFSET)
-  // assumption：放在 premise 下方
-  putColumn(groups.assumption, COL_X.premise + 140, mainCenterY + (groups.premise.length + 1) * ROW_H / 2 + SUB_Y_OFFSET)
+  putColumn(groups.premise, colPremise, mainCenterY)
+  putColumn(midCol1, colMid1, mainCenterY)
+  if (hasDoubleIntermediate) {
+    putColumn(midCol2, colMid2, mainCenterY)
+  }
+  putColumn(groups.conclusion, colConclusion, mainCenterY)
+
+  // counter：放在中间列上方
+  const counterX = colMid1 + (hasDoubleIntermediate ? COL_GAP / 2 : 0)
+  const counterY = mainCenterY - (Math.max(midCol1.length, groups.premise.length) + 1) * ROW_H / 2 - 60
+  putColumn(groups.counter, counterX, counterY)
+
+  // assumption：放在前提列下方
+  const assumpY = mainCenterY + (groups.premise.length + 1) * ROW_H / 2 + 60
+  putColumn(groups.assumption, colPremise + COL_GAP / 2, assumpY)
 
   return positioned
 }
@@ -134,24 +182,26 @@ function buildFlow(graph) {
   const nodes = positioned.map(({ raw, x, y }) => {
     const color = NODE_COLORS[raw.type] || NODE_COLORS.intermediate
     const typeLabel = TYPE_LABEL[raw.type] || '节点'
+    // 节点显示：类型标签 + 标题 + summary 简述
+    const summaryText = raw.summary ? `\n${raw.summary}` : ''
     return {
       id: raw.id,
       type: 'default',
       position: { x, y },
       data: { raw },
-      label: `【${typeLabel}】${raw.label}`,
+      label: `【${typeLabel}】${raw.label}${summaryText}`,
       style: {
         background: color.bg,
         color: color.text,
-        border: `1.8px solid ${color.border}`,
-        borderRadius: '10px',
-        padding: '10px 12px',
-        width: '220px',
-        fontSize: '12.5px',
-        lineHeight: '1.45',
+        border: `2px solid ${color.border}`,
+        borderRadius: '12px',
+        padding: '10px 14px',
+        width: '240px',
+        fontSize: '12px',
+        lineHeight: '1.5',
         fontWeight: 600,
         boxShadow: `0 4px 14px ${color.shadow}`,
-        whiteSpace: 'normal',
+        whiteSpace: 'pre-line',
         textAlign: 'left',
       },
       title: raw.summary || '',
@@ -196,16 +246,11 @@ function relayout() {
   rebuild()
 }
 
-// 仅监听 props.graph 引用变化 + 节点/边数量变化，避免 deep:true 对大图递归创建 Proxy、
-// 减少调用方任何节点字段微调都触发全量 rebuild 的开销
+// 仅监听 props.graph 引用变化 + 节点/边数量变化
 watch(
   () => [props.graph, props.graph?.nodes?.length || 0, props.graph?.edges?.length || 0],
   () => { rebuild() }
 )
-
-onMounted(() => {
-  rebuild()
-})
 </script>
 
 <style scoped>
@@ -238,6 +283,20 @@ onMounted(() => {
   border-radius: 10px;
   background: linear-gradient(180deg, #fffdf9 0%, #f8f1e5 100%);
   overflow: hidden;
+  transition: all 0.25s ease;
+}
+/* 全屏放大模式 */
+.arg-canvas-full {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  z-index: 9999;
+  border: none;
 }
 
 .arg-legend {
@@ -286,6 +345,16 @@ onMounted(() => {
   transition: all 0.15s;
 }
 .arg-btn:hover { background: #fbf6ee; border-color: #d4b896; }
+.arg-btn.primary {
+  margin-left: 6px;
+  background: linear-gradient(135deg, #fff8f0, #ffecd2);
+  border-color: #d4a76a;
+  color: #8b5e3c;
+}
+.arg-btn.primary:hover {
+  background: linear-gradient(135deg, #ffecd2, #ffdab9);
+  border-color: #b07f5b;
+}
 
 .arg-flow {
   width: 100%;

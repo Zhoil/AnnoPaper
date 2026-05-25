@@ -110,7 +110,7 @@
           <span class="logic-title-text">论证逻辑图</span>
           <span class="logic-title-sub">由模型提炼 · 可拖拽调整布局</span>
         </div>
-        <div class="logic-hint">💡 拖动节点 / 滚轮缩放 / 右下角可 fit-view</div>
+        <div class="logic-hint">💡 拖动节点 / 滚轮缩放 / 右下角 fit-view / 点击“放大查看”全屏浏览</div>
       </div>
       <ArgumentLogicGraph :graph="argumentLogicGraph" />
     </div>

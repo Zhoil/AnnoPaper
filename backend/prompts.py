@@ -146,11 +146,12 @@ ANALYZE_SYSTEM_PROMPT = """你是一个顶尖的文献情报分析专家（{mode
 提炼作者在全文中展开论证的**推理关系图**（不是复述 core_arguments，而是用更抽象的节点表达前提→结论的推理链）：
 
 节点规则：
-- 节点数 4-10 个，过少信息不足，过多视觉杂乱
-- 至少包含 1 个 type="premise"（前提/出发点）和 1 个 type="conclusion"（最终结论）
+- 节点数 6-15 个，尽量多给，以展现论证细节和分支推理路径
+- 至少包含 2 个 type="premise"（前提/出发点）和 1 个 type="conclusion"（最终结论）
+- 鼓励使用 counter 和 assumption 节点来体现对立面和隐含前提
 - id 必须使用 "n1", "n2", "n3" ... 这种短字符串，严禁使用中文或空格
-- label：4-10 字中文节点标题，简洁可读
-- summary：20-40 字，清晰表达该节点承担的主张或作用
+- label：4-12 字中文节点标题，简洁可读
+- summary：20-50 字，清晰表达该节点承担的主张或作用，比 label 更详细
 - type 必须严格从以下五选一：
   * premise       —— 事实前提、背景假设、已知条件
   * intermediate  —— 中间推论、桥接论断
@@ -160,6 +161,7 @@ ANALYZE_SYSTEM_PROMPT = """你是一个顶尖的文献情报分析专家（{mode
 
 边规则：
 - 边的 from / to 必须指向已存在的 node.id，禁止悬空引用
+- 尽可能多建立边连接，展示节点之间的完整关系网络（每个节点至少一条入边或出边）
 - relation 必须严格从以下五选一：
   * support      —— A 支持 B（最常见）
   * rebut        —— A 反驳/削弱 B
@@ -171,6 +173,8 @@ ANALYZE_SYSTEM_PROMPT = """你是一个顶尖的文献情报分析专家（{mode
 整体要求：
 - 与 core_arguments **不重复**：core_arguments 是原文复制粘贴，argument_logic_graph 是抽象推理网络
 - 体现论证的**逻辑结构**而非时间顺序
+- 优先展现多层推理链路（premise→intermediate→intermediate→conclusion），避免扁平化
+- 若存在对立论点或反驳关系，务必用 counter 节点 + rebut 边体现
 - 若文档过短或难以可靠提炼，允许返回 {{"nodes":[],"edges":[]}} 空图
 </argument_logic_graph_rules>
 
