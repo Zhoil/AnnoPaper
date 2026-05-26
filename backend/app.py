@@ -217,7 +217,13 @@ def upload_file():
             return jsonify({'error': '不支持的文件格式'}), 400
         
         # 保存文件
+        # secure_filename 会移除中文等非 ASCII 字符，可能导致扩展名丢失（如 "测试.pdf" → "pdf"）
+        # 因此从原始文件名先提取扩展名保存备用
+        original_ext = os.path.splitext(file.filename)[1].lower()
         filename = secure_filename(file.filename)
+        # 如果 secure_filename 处理后扩展名丢失，用原始扩展名补回
+        if original_ext and not os.path.splitext(filename)[1]:
+            filename = (filename or 'file') + original_ext
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         unique_filename = f"{timestamp}_{filename}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)

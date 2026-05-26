@@ -23,7 +23,7 @@
         <div v-if="!documentStore.hasDocument" class="welcome-page">
 
           <!-- ░░ BLUE HERO ZONE ░░ -->
-          <div class="hero-zone">
+          <div class="hero-zone" :class="{ 'hero-zone-full': !showDetails }">
             <div class="hero-inner">
               <div class="hero-badge">✨ AI Powered Document Analyzer</div>
               <div class="hero-brand">
@@ -49,6 +49,11 @@
                   <span class="github-text">GitHub</span>
                 </a>
               </div>
+              <!-- 折叠/展开下方介绍内容 -->
+              <button class="details-toggle-btn" @click="showDetails = !showDetails" :title="showDetails ? '收起介绍' : '展开介绍'">
+                <span class="details-toggle-icon" :class="{ rotated: !showDetails }">⌄</span>
+                <span>{{ showDetails ? '收起介绍' : '展开介绍' }}</span>
+              </button>
             </div>
 
             <!-- S-curve double-hump wave divider（上驼峰 + 下驼峰 + 重影弧线） -->
@@ -68,7 +73,7 @@
           </div>
 
           <!-- ░░ WHITE CONTENT ZONE ░░ -->
-          <div class="content-zone">
+          <div v-show="showDetails" class="content-zone">
             <div class="content-inner">
 
               <!-- Feature Cards -->
@@ -184,7 +189,7 @@
           </div>
 
           <!-- Footer 版权声明 -->
-          <footer class="app-footer">
+          <footer v-show="showDetails" class="app-footer">
             <span>© 2026 AnnoPaper. Everything is possible.</span>
           </footer>
 
@@ -266,6 +271,8 @@ const showHistoryModal = ref(false)
 const showCompareModal = ref(false)
 const compareResult = ref(null)
 const navVisible = ref(false)
+// 控制下方介绍内容的显隐（核心功能、使用流程、技术驱动）
+const showDetails = ref(true)
 
 const handleCompareResult = (result) => {
   compareResult.value = result
@@ -419,6 +426,55 @@ const handleCompareResult = (result) => {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+/* 隐藏下方介绍时 hero-zone 占满全屏，内容居中显示 */
+.hero-zone-full {
+  flex: 1 !important;
+  display: flex;
+  flex-direction: column;
+}
+/* hero-inner 填满剩余空间并居中内容，wave 自然在底部 */
+.hero-zone-full .hero-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 24px;
+  padding-bottom: 24px;
+}
+
+/* 收起/展开按鈕 */
+.details-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 20px;
+  padding: 7px 18px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background 0.2s, border-color 0.2s;
+  letter-spacing: 0.3px;
+}
+.details-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+.details-toggle-icon {
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.3s ease;
+  display: inline-block;
+}
+.details-toggle-icon.rotated {
+  transform: rotate(180deg);
 }
 
 /* ===== DARK CONTENT ZONE ===== */

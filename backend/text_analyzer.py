@@ -357,6 +357,14 @@ class TextAnalyzer:
                     matched_text = kp_content
                     match_method = 'normalized'
 
+            # 方法3.5：去CJK间空格后归一化匹配（处理 LLM 在中文字间插入空格的情况）
+            # 例：LLM 返回"生 成 式"，原文为"生成式" → 去空格后命中，保留 LLM 原文交由 PDF 引擎策略2.5处理
+            if not matched_text:
+                kp_cjk = self._strip_cjk_spaces(norm_kp)
+                if kp_cjk and kp_cjk in self._strip_cjk_spaces(norm_text):
+                    matched_text = kp_content
+                    match_method = 'cjk_stripped'
+
             # 方法4：模糊匹配 - 找到最相似的句子
             if not matched_text:
                 matched_text, match_method = self._fuzzy_match_sentence(kp_content, sentences)
@@ -518,14 +526,18 @@ class TextAnalyzer:
         dropped = 0
         for kp in keypoints:
             content = kp['content']
-            start_pos = text.find(content)
+            llm_content = kp.get('llm_content', '')
 
-            # 如果精确匹配失败，尝试用 llm_content
-            hl_text = content
-            if start_pos == -1 and kp.get('llm_content'):
-                start_pos = text.find(kp['llm_content'])
-                if start_pos != -1:
-                    hl_text = kp['llm_content']
+            # PDF 标注优先使用 llm_content（LLM 精确原文）作为搜索文本。
+            # content 若来自模糊匹配，是整句甚至整段文字，跨行搜索命中率低。
+            # PDF 引擎本身有 9 级策略专门处理 LLM 文本不规范（CJK 间空格、引号差异等），
+            # 传入 LLM 原文让引擎自行处理，效果优于传入模糊匹配的长句子。
+            hl_text = llm_content if llm_content else content
+
+            # 在提取文本中找起始位置（供前端预览高亮定位）
+            start_pos = text.find(hl_text)
+            if start_pos == -1 and hl_text != content:
+                start_pos = text.find(content)
 
             # 即使在提取文本中找不到，也保留到 highlights
             # 因为 annotate_pdf 有自己的9级搜索策略，可能仍然能定位
@@ -546,7 +558,7 @@ class TextAnalyzer:
             })
 
         if dropped:
-            print(f"  ⚠️ _generate_highlights: {dropped}/{len(keypoints)} 个关键点在提取文本中未找到，已保留交由 PDF 标注引擎处理")
+            print(f"  \u26a0\ufe0f _generate_highlights: {dropped}/{len(keypoints)} 个关键点在提取文本中未找到，已保留交由 PDF 标注引擎处理")
         return highlights
 
     def annotate_docx(self, input_path, highlights, output_path):
