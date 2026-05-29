@@ -314,6 +314,103 @@ export const useDocumentStore = defineStore('document', {
       } catch (error) {
         throw new Error(error.response?.data?.error || error.message || 'AI 对话失败')
       }
+    },
+
+    /**
+     * 流式 AI 对话（SSE）—— 支持深度思考开关和实时推送
+     * @param {string} message 用户消息
+     * @param {Array} chatHistory 对话历史
+     * @param {Object} options {ragMode, deepThinking}
+     * @param {Object} callbacks {onThinking, onContent, onDone, onError, onMeta}
+     */
+    async sendChatMessageStream(message, chatHistory = [], options = {}, callbacks = {}) {
+      const doc = this.currentDocument
+      let documentContext = ''
+      const analysisId = doc?.record_id ?? doc?.id ?? null
+      const ragMode = options.ragMode || 'auto'
+      const deepThinking = !!options.deepThinking
+
+      if (doc) {
+        const keypoints = (doc.keypoints || [])
+          .slice(0, 5)
+          .map(k => `\u2022 ${k.content}`)
+          .join('\n')
+        const summaryText = doc.summary?.conclusions?.[0] || ''
+        documentContext = [
+          `\u6587\u6863\u6807\u9898\uff1a${doc.title || '\u672a\u77e5\u6587\u6863'}`,
+          summaryText ? `\u6587\u6863\u6458\u8981\uff1a${summaryText}` : '',
+          keypoints ? `\u6838\u5fc3\u5173\u952e\u70b9\uff1a\n${keypoints}` : ''
+        ].filter(Boolean).join('\n\n')
+      }
+
+      const body = JSON.stringify({
+        message,
+        document_context: documentContext,
+        chat_history: chatHistory,
+        analysis_id: analysisId,
+        rag_mode: ragMode,
+        deep_thinking: deepThinking,
+      })
+
+      try {
+        const resp = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        })
+
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}))
+          throw new Error(errData.error || `HTTP ${resp.status}`)
+        }
+
+        const reader = resp.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let currentEvent = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() // 保留未完成的行
+
+          for (const line of lines) {
+            if (line.startsWith('event:')) {
+              currentEvent = line.slice(6).trim()
+            } else if (line.startsWith('data:')) {
+              const dataStr = line.slice(5).trim()
+              try {
+                const payload = JSON.parse(dataStr)
+                switch (currentEvent) {
+                  case 'thinking':
+                    callbacks.onThinking?.(payload.text || '')
+                    break
+                  case 'content':
+                    callbacks.onContent?.(payload.text || '')
+                    break
+                  case 'done':
+                    callbacks.onDone?.(payload)
+                    break
+                  case 'error':
+                    callbacks.onError?.(payload.message || '未知错误')
+                    break
+                  case 'meta':
+                    callbacks.onMeta?.(payload)
+                    break
+                }
+              } catch (e) {
+                // JSON 解析失败，跳过
+              }
+              currentEvent = ''
+            }
+          }
+        }
+      } catch (error) {
+        callbacks.onError?.(error.message || '流式对话失败')
+      }
     }
   },
 

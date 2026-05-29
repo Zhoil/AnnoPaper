@@ -653,6 +653,128 @@ class LLMService:
             print(f"Chat 错误: {str(e)}")
             return None
 
+    def chat_stream(self, message: str, document_context: str, chat_history: list,
+                    deep_thinking: bool = False):
+        """
+        AI 对话流式接口（生成器）—— 逐 chunk yield SSE 事件。
+
+        Yields: (event_type, data_dict)
+          - ('thinking', {'text': '...'})
+          - ('content',  {'text': '...'})
+          - ('done',     {'usage': {...}})
+          - ('error',    {'message': '...'})
+        """
+        config = self._get_provider_config(self.chat_provider)
+        model_name = config['display_name']
+        system_prompt = build_chat_system_prompt(model_name, document_context)
+
+        messages = [{'role': 'system', 'content': system_prompt}]
+        for msg in chat_history[-10:]:
+            messages.append({'role': msg['role'], 'content': msg['content']})
+        messages.append({'role': 'user', 'content': message})
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {config["api_key"]}'
+        }
+        data = {
+            'model': config['model'],
+            'messages': messages,
+            'stream': True,
+        }
+
+        if deep_thinking:
+            self._apply_thinking_params(data, config)
+        else:
+            data['temperature'] = 0.7
+
+        _t0 = time.perf_counter()
+        try:
+            resp = requests.post(
+                config['api_url'], headers=headers, json=data,
+                timeout=config['timeout'], stream=True
+            )
+            resp.encoding = 'utf-8'
+
+            if resp.status_code != 200:
+                err_text = ''
+                try:
+                    err_text = resp.text[:500]
+                except Exception:
+                    pass
+                yield ('error', {'message': f'API 返回 {resp.status_code}: {err_text}'})
+                return
+
+            usage = None
+            for raw in resp.iter_lines(decode_unicode=True):
+                if not raw:
+                    continue
+                line = raw.strip()
+                if not line.startswith('data:'):
+                    continue
+                payload = line[5:].strip()
+                if payload == '[DONE]':
+                    break
+                try:
+                    obj = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+
+                if obj.get('usage'):
+                    usage = obj['usage']
+
+                for ch in obj.get('choices', []) or []:
+                    delta = ch.get('delta') or {}
+                    # 思考过程片段
+                    reasoning_piece = delta.get('reasoning_content') or ''
+                    if reasoning_piece:
+                        yield ('thinking', {'text': reasoning_piece})
+                    # 正式回答片段
+                    content_piece = delta.get('content') or ''
+                    if content_piece:
+                        yield ('content', {'text': content_piece})
+
+            resp.close()
+
+            # 完成事件
+            _latency = int((time.perf_counter() - _t0) * 1000)
+            usage_info = {}
+            if usage:
+                usage_info = {
+                    'prompt_tokens': usage.get('prompt_tokens', 0),
+                    'completion_tokens': usage.get('completion_tokens', 0),
+                    'total_tokens': usage.get('total_tokens', 0),
+                }
+            record_llm_call(
+                provider=config.get('provider', ''),
+                model=config.get('model', ''),
+                call_type='chat_stream',
+                latency_ms=_latency,
+                prompt_tokens=usage_info.get('prompt_tokens', 0),
+                completion_tokens=usage_info.get('completion_tokens', 0),
+                total_tokens=usage_info.get('total_tokens', 0),
+                status='success',
+                input_chars=len(message),
+            )
+            yield ('done', {'usage': usage_info, 'latency_ms': _latency})
+
+        except requests.exceptions.Timeout:
+            _latency = int((time.perf_counter() - _t0) * 1000)
+            record_llm_call(
+                provider=config.get('provider', ''), model=config.get('model', ''),
+                call_type='chat_stream', latency_ms=_latency, status='timeout',
+                input_chars=len(message), error_message='timeout',
+            )
+            yield ('error', {'message': '请求超时，请稍后重试'})
+        except Exception as e:
+            _latency = int((time.perf_counter() - _t0) * 1000)
+            record_llm_call(
+                provider=config.get('provider', ''), model=config.get('model', ''),
+                call_type='chat_stream', latency_ms=_latency, status='error',
+                input_chars=len(message), error_message=str(e)[:200],
+            )
+            yield ('error', {'message': f'对话失败: {str(e)}'})
+
     # ── 文件直传 API 方法 ─────────────────────────────────────
 
     def _get_base_url(self, config: dict) -> str:

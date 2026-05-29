@@ -1,5 +1,7 @@
 <template>
-  <div class="chat-container">
+  <!-- 全屏时 Teleport 到 body，覆盖整个视口 -->
+  <Teleport to="body" :disabled="!isFullscreen">
+  <div class="chat-container" :class="{ fullscreen: isFullscreen }">
     <!-- 头部信息 -->
     <div class="chat-header">
       <div class="chat-header-left">
@@ -9,12 +11,18 @@
           <div class="chat-subtitle">DeepSeek-V4 驱动 · 联动当前页面 · 基于轻量RAG</div>
         </div>
       </div>
-      <button class="clear-btn" @click="clearChat" title="清空对话">
-        🗑️
-      </button>
+      <div class="chat-header-actions">
+        <button class="header-action-btn" @click="toggleFullscreen" :title="isFullscreen ? '退出全屏' : '全屏模式'">
+          <span v-if="!isFullscreen">⛶</span>
+          <span v-else>✕</span>
+        </button>
+        <button class="clear-btn" @click="clearChat" title="清空对话">
+          🗑️
+        </button>
+      </div>
     </div>
 
-    <!-- 文档上下文提示 + RAG 模式切换 -->
+    <!-- 文档上下文提示 + RAG 模式切换 + 深度思考开关 -->
     <div v-if="hasDocument" class="doc-context-badge">
       <span class="doc-badge-icon">📄</span>
       <span class="doc-badge-text">已载入文档：{{ documentTitle }}</span>
@@ -22,10 +30,28 @@
         <input type="checkbox" v-model="fullScan" />
         <span class="rag-switch-label">全文模式</span>
       </label>
+      <button
+        class="thinking-toggle-btn"
+        :class="{ active: deepThinking }"
+        @click="deepThinking = !deepThinking"
+        title="开启后 AI 将展示详细思考过程"
+      >
+        <span class="thinking-toggle-icon">🧠</span>
+        <span class="thinking-toggle-text">Thinking</span>
+      </button>
     </div>
     <div v-else class="doc-context-badge no-doc">
       <span class="doc-badge-icon">⚠️</span>
       <span class="doc-badge-text">暂无文档，上传文档后可获得更精准的问答</span>
+      <button
+        class="thinking-toggle-btn"
+        :class="{ active: deepThinking }"
+        @click="deepThinking = !deepThinking"
+        title="开启后 AI 将展示详细思考过程"
+      >
+        <span class="thinking-toggle-icon">🧠</span>
+        <span class="thinking-toggle-text">Thinking</span>
+      </button>
     </div>
 
     <!-- 消息列表 -->
@@ -55,20 +81,38 @@
             <span v-else>🤖</span>
           </div>
           <div class="message-bubble" :class="{ 'md-bubble': msg.role === 'assistant' }">
+            <!-- 思考面板 -->
+            <div v-if="msg.thinking" class="thinking-panel">
+              <div class="thinking-header" @click="toggleThinking(msg)">
+                <span class="thinking-icon">🧠</span>
+                <span class="thinking-label">Thinking</span>
+                <span v-if="msg.isStreaming && !msg.thinkingDone" class="thinking-status">思考中...</span>
+                <span v-else-if="msg.thinkingDone" class="thinking-status done">已完成</span>
+                <span class="thinking-arrow" :class="{ expanded: msg._thinkExpanded }">▾</span>
+              </div>
+              <transition name="think-expand">
+                <div v-show="msg._thinkExpanded" class="thinking-body">
+                  <div class="thinking-text" v-html="renderThinking(msg)"></div>
+                  <span v-if="msg.isStreaming && !msg.thinkingDone" class="streaming-cursor"></span>
+                </div>
+              </transition>
+            </div>
+            <!-- 正式回答 -->
             <div class="message-content" v-html="renderMessage(msg)"></div>
+            <span v-if="msg.isStreaming && msg.thinkingDone" class="streaming-cursor"></span>
             <div class="message-time">{{ msg.time }}</div>
           </div>
         </div>
       </TransitionGroup>
 
-      <!-- 加载中 -->
-      <div v-if="isLoading" class="message-wrapper assistant">
+      <!-- 加载中（仅在等待首个 chunk 时显示） -->
+      <div v-if="isLoading && !streamingMsg" class="message-wrapper assistant">
         <div class="message-avatar"><span>🤖</span></div>
         <div class="message-bubble loading-bubble">
           <div class="typing-dots">
             <span></span><span></span><span></span>
           </div>
-          <div class="loading-text">思考中...</div>
+          <div class="loading-text">{{ deepThinking ? '正在深度思考...' : '思考中...' }}</div>
         </div>
       </div>
     </div>
@@ -95,10 +139,11 @@
       </button>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <script setup>
-import { ref, computed, nextTick, watch } from 'vue'
+import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue'
 import { marked } from 'marked'
 import { useDocumentStore } from '../stores/document'
 
@@ -107,7 +152,29 @@ const messagesContainer = ref(null)
 const inputText = ref('')
 const isLoading = ref(false)
 const messages = ref([])
+const deepThinking = ref(true)
+const isFullscreen = ref(false)
+const streamingMsg = ref(null) // 当前正在流式接收的消息引用
 let messageId = 0
+
+// 全屏切换
+const toggleFullscreen = () => {
+  isFullscreen.value = !isFullscreen.value
+  // 全屏时禁止 body 滚动
+  document.body.style.overflow = isFullscreen.value ? 'hidden' : ''
+}
+
+// ESC 退出全屏
+const onKeydown = (e) => {
+  if (e.key === 'Escape' && isFullscreen.value) {
+    toggleFullscreen()
+  }
+}
+document.addEventListener('keydown', onKeydown)
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown)
+  document.body.style.overflow = ''
+})
 
 const hasDocument = computed(() => documentStore.hasDocument)
 const documentTitle = computed(() => documentStore.getCurrentDocument?.title || '当前文档')
@@ -115,8 +182,8 @@ const fullScan = ref(false)
 
 // 配置 marked 渲染选项
 marked.setOptions({
-  breaks: true,      // 换行符转为 <br>
-  gfm: true,         // 启用 GitHub Flavored Markdown
+  breaks: true,
+  gfm: true,
 })
 
 // 文档切换时清空对话
@@ -139,32 +206,58 @@ const formatUserMessage = (text) => {
 
 // AI 消息：用 marked 渲染 markdown
 const formatAssistantMessage = (text) => {
+  if (!text) return ''
   try {
     return marked.parse(text)
   } catch (e) {
-    // 降级处理
     return text.replace(/\n/g, '<br>')
   }
 }
 
-const formatMessage = (content, role) => {
-  if (role === 'assistant') {
-    return formatAssistantMessage(content)
-  }
-  return formatUserMessage(content)
-}
-
-// 渲染消息：在 message 对象上缓存 _html，避免每次响应式重渲染都调用 marked.parse（长对话下主要卡顿源）
+// 渲染消息：带缓存避免重复解析
 const renderMessage = (msg) => {
   if (!msg) return ''
+  if (msg.role === 'user') {
+    if (msg._html !== undefined) return msg._html
+    msg._html = formatUserMessage(msg.content || '')
+    return msg._html
+  }
+  // assistant 消息：流式接收中不缓存（内容持续变化）
+  if (msg.isStreaming) {
+    return formatAssistantMessage(msg.content || '')
+  }
   if (msg._html !== undefined) return msg._html
-  msg._html = msg.role === 'assistant'
-    ? formatAssistantMessage(msg.content || '')
-    : formatUserMessage(msg.content || '')
+  msg._html = formatAssistantMessage(msg.content || '')
   return msg._html
 }
 
+// 渲染思考内容（简单换行处理，不做复杂 markdown）
+const renderThinking = (msg) => {
+  if (!msg || !msg.thinking) return ''
+  if (msg.isStreaming && !msg.thinkingDone) {
+    // 流式中不缓存
+    return msg.thinking.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+  }
+  if (msg._thinkHtml !== undefined) return msg._thinkHtml
+  msg._thinkHtml = msg.thinking.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+  return msg._thinkHtml
+}
+
+// 思考面板展开/收起
+const toggleThinking = (msg) => {
+  msg._thinkExpanded = !msg._thinkExpanded
+}
+
+// 自动滚动（仅在用户未手动上滑时触发）
+let userScrolledUp = false
+const onScroll = () => {
+  const el = messagesContainer.value
+  if (!el) return
+  userScrolledUp = el.scrollTop + el.clientHeight < el.scrollHeight - 50
+}
+
 const scrollToBottom = async () => {
+  if (userScrolledUp) return
   await nextTick()
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
@@ -174,6 +267,7 @@ const scrollToBottom = async () => {
 const clearChat = () => {
   messages.value = []
   inputText.value = ''
+  streamingMsg.value = null
 }
 
 const sendSuggest = (text) => {
@@ -197,39 +291,138 @@ const sendMessage = async () => {
 
   isLoading.value = true
 
-  // 构建发送给 API 的历史记录（只传 role + content）
+  // 构建历史记录
   const chatHistory = messages.value
-    .slice(0, -1)  // 排除刚加入的用户消息
+    .filter(m => !m.isStreaming)
+    .slice(-10)
     .map(m => ({ role: m.role, content: m.content }))
 
-  try {
-    const result = await documentStore.sendChatMessage(text, chatHistory, {
-      ragMode: fullScan.value ? 'full' : 'auto'
-    })
-    // 兼容旧返回结构（字符串）与新返回结构（对象）
-    const replyContent = typeof result === 'string' ? result : (result?.content || '')
-    const ragMode = typeof result === 'string' ? '' : (result?.ragMode || '')
-    const ragTag = ragMode === 'full'
-      ? '\n\n<small style="opacity:0.55">✨ 已采用全文模式进行回答</small>'
-      : (ragMode === 'retrieve'
-        ? '\n\n<small style="opacity:0.55">🔍 已基于相关片段检索回答</small>'
-        : '')
+  // 创建空 AI 消息占位
+  const aiMsg = {
+    id: ++messageId,
+    role: 'assistant',
+    content: '',
+    thinking: '',
+    time: formatTime(),
+    isStreaming: true,
+    thinkingDone: false,
+    _thinkExpanded: true, // 默认展开思考面板
+  }
+  messages.value.push(aiMsg)
+  streamingMsg.value = aiMsg
+  await scrollToBottom()
 
-    messages.value.push({
-      id: ++messageId,
-      role: 'assistant',
-      content: replyContent + ragTag,
-      time: formatTime()
-    })
+  // RAF 缓冲：合并高频更新，每帧最多刷新一次
+  let thinkingBuffer = ''
+  let contentBuffer = ''
+  let rafId = null
+
+  const flushBuffers = () => {
+    const hadThinking = !!thinkingBuffer
+    if (thinkingBuffer) {
+      aiMsg.thinking += thinkingBuffer
+      thinkingBuffer = ''
+      delete aiMsg._thinkHtml
+    }
+    if (contentBuffer) {
+      aiMsg.content += contentBuffer
+      contentBuffer = ''
+      delete aiMsg._html
+    }
+    // 触发响应式更新（浅触发）
+    messages.value = [...messages.value]
+    scrollToBottom()
+    // 思考面板自动滚动到底部
+    if (hadThinking && aiMsg._thinkExpanded) {
+      nextTick(() => {
+        const el = messagesContainer.value
+        if (!el) return
+        const thinkBody = el.querySelector('.thinking-body')
+        if (thinkBody) {
+          thinkBody.scrollTop = thinkBody.scrollHeight
+        }
+      })
+    }
+    rafId = null
+  }
+
+  const scheduleFlush = () => {
+    if (!rafId) {
+      rafId = requestAnimationFrame(flushBuffers)
+    }
+  }
+
+  try {
+    await documentStore.sendChatMessageStream(
+      text,
+      chatHistory,
+      {
+        ragMode: fullScan.value ? 'full' : 'auto',
+        deepThinking: deepThinking.value,
+      },
+      {
+        onMeta(data) {
+          // 可接收 rag_mode 等元信息
+        },
+        onThinking(textPiece) {
+          thinkingBuffer += textPiece
+          scheduleFlush()
+        },
+        onContent(textPiece) {
+          // 首次收到 content 时，标记思考阶段结束并自动收起
+          if (!aiMsg.thinkingDone && aiMsg.thinking) {
+            aiMsg.thinkingDone = true
+            aiMsg._thinkExpanded = false
+            delete aiMsg._thinkHtml
+          }
+          contentBuffer += textPiece
+          scheduleFlush()
+        },
+        onDone(data) {
+          // 确保缓冲区全部刷新
+          if (rafId) {
+            cancelAnimationFrame(rafId)
+            rafId = null
+          }
+          flushBuffers()
+          aiMsg.isStreaming = false
+          aiMsg.thinkingDone = true
+          if (!aiMsg.thinking) {
+            // 没有思考内容则不显示面板
+          }
+          // 追加 RAG 标签
+          if (data?.rag_mode === 'full') {
+            aiMsg.content += '\n\n<small style="opacity:0.55">✨ 已采用全文模式进行回答</small>'
+          } else if (data?.rag_mode === 'retrieve') {
+            aiMsg.content += '\n\n<small style="opacity:0.55">🔍 已基于相关片段检索回答</small>'
+          }
+          delete aiMsg._html
+          messages.value = [...messages.value]
+        },
+        onError(msg) {
+          if (rafId) {
+            cancelAnimationFrame(rafId)
+            rafId = null
+          }
+          flushBuffers()
+          aiMsg.isStreaming = false
+          aiMsg.thinkingDone = true
+          if (!aiMsg.content) {
+            aiMsg.content = `⚠️ ${msg}`
+          }
+          delete aiMsg._html
+          messages.value = [...messages.value]
+        }
+      }
+    )
   } catch (error) {
-    messages.value.push({
-      id: ++messageId,
-      role: 'assistant',
-      content: `⚠️ 发生错误：${error.message}`,
-      time: formatTime()
-    })
+    aiMsg.isStreaming = false
+    aiMsg.content = `⚠️ 发生错误：${error.message}`
+    delete aiMsg._html
+    messages.value = [...messages.value]
   } finally {
     isLoading.value = false
+    streamingMsg.value = null
     await scrollToBottom()
   }
 }
@@ -243,6 +436,20 @@ const sendMessage = async () => {
   min-height: 500px;
 }
 
+/* 全屏模式 */
+.chat-container.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: #faf8f5;
+  min-height: unset;
+  padding: 0;
+  border-radius: 0;
+}
+
 /* 头部 */
 .chat-header {
   display: flex;
@@ -251,6 +458,32 @@ const sendMessage = async () => {
   margin-bottom: 10px;
   padding-bottom: 10px;
   border-bottom: 1px solid #d5cabb;
+}
+
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-action-btn {
+  background: rgba(58, 159, 216, 0.06);
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  color: #8a7e72;
+  border: none;
+}
+
+.header-action-btn:hover {
+  background: rgba(58, 159, 216, 0.15);
+  color: #3a9fd8;
 }
 
 .chat-header-left {
@@ -287,6 +520,7 @@ const sendMessage = async () => {
   transition: all 0.2s ease;
   cursor: pointer;
   color: #8a7e72;
+  border: none;
 }
 
 .clear-btn:hover {
@@ -304,6 +538,7 @@ const sendMessage = async () => {
   border-radius: 8px;
   padding: 6px 10px;
   margin-bottom: 10px;
+  flex-wrap: wrap;
 }
 
 .doc-context-badge.no-doc {
@@ -359,6 +594,44 @@ const sendMessage = async () => {
   user-select: none;
 }
 
+/* 深度思考开关按钮 */
+.thinking-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(120, 120, 120, 0.08);
+  border: 1px solid rgba(120, 120, 120, 0.2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.25s ease;
+  font-size: 11px;
+  color: #8a7e72;
+  font-weight: 600;
+}
+
+.thinking-toggle-btn:hover {
+  background: rgba(102, 126, 234, 0.12);
+  border-color: rgba(102, 126, 234, 0.35);
+  color: #667eea;
+}
+
+.thinking-toggle-btn.active {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 226, 0.12));
+  border-color: rgba(102, 126, 234, 0.4);
+  color: #667eea;
+  box-shadow: 0 0 8px rgba(102, 126, 234, 0.15);
+}
+
+.thinking-toggle-icon {
+  font-size: 12px;
+}
+
+.thinking-toggle-text {
+  user-select: none;
+}
+
 /* 消息区域 */
 .chat-messages {
   flex: 1;
@@ -367,6 +640,11 @@ const sendMessage = async () => {
   margin-bottom: 10px;
   min-height: 300px;
   max-height: 420px;
+}
+
+.fullscreen .chat-messages {
+  max-height: unset;
+  min-height: unset;
 }
 
 .chat-messages::-webkit-scrollbar {
@@ -481,6 +759,120 @@ const sendMessage = async () => {
 .message-content {
   font-size: 13px;
   word-break: break-word;
+}
+
+/* 思考面板 */
+.thinking-panel {
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.06), rgba(118, 75, 226, 0.04));
+  border: 1px solid rgba(102, 126, 234, 0.15);
+  overflow: hidden;
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+
+.thinking-header:hover {
+  background: rgba(102, 126, 234, 0.08);
+}
+
+.thinking-icon {
+  font-size: 13px;
+}
+
+.thinking-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.thinking-status {
+  font-size: 11px;
+  color: #95a5a6;
+  margin-left: 4px;
+}
+
+.thinking-status.done {
+  color: #51cf66;
+}
+
+.thinking-arrow {
+  margin-left: auto;
+  font-size: 12px;
+  color: #667eea;
+  transition: transform 0.3s ease;
+}
+
+.thinking-arrow.expanded {
+  transform: rotate(0deg);
+}
+
+.thinking-arrow:not(.expanded) {
+  transform: rotate(-90deg);
+}
+
+.thinking-body {
+  padding: 0 12px 10px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.thinking-body::-webkit-scrollbar {
+  width: 3px;
+}
+
+.thinking-body::-webkit-scrollbar-thumb {
+  background: rgba(102, 126, 234, 0.2);
+  border-radius: 3px;
+}
+
+.thinking-text {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #6b7280;
+  padding-top: 8px;
+  word-break: break-word;
+}
+
+/* 流式光标 */
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  background: #667eea;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 0.8s infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* 思考面板展开/收起过渡 */
+.think-expand-enter-active,
+.think-expand-leave-active {
+  transition: all 0.3s ease;
+  max-height: 200px;
+  overflow: hidden;
+}
+
+.think-expand-enter-from,
+.think-expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 /* AI 消息 markdown 渲染样式 */
@@ -687,6 +1079,7 @@ const sendMessage = async () => {
   transition: all 0.25s ease;
   cursor: pointer;
   flex-shrink: 0;
+  border: none;
 }
 
 .send-btn:hover:not(:disabled) {
@@ -723,4 +1116,166 @@ const sendMessage = async () => {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ============ 全屏模式专属样式（类 DeepSeek 网页端） ============ */
+.fullscreen .chat-header {
+  padding: 16px 40px 14px;
+  margin-bottom: 0;
+  border-bottom: 1px solid #e8e0d4;
+  background: #faf8f5;
+}
+
+.fullscreen .chat-model-icon {
+  font-size: 34px;
+}
+
+.fullscreen .chat-title {
+  font-size: 18px;
+}
+
+.fullscreen .chat-subtitle {
+  font-size: 13px;
+}
+
+.fullscreen .header-action-btn {
+  width: 38px;
+  height: 38px;
+  font-size: 20px;
+}
+
+.fullscreen .clear-btn {
+  width: 38px;
+  height: 38px;
+  font-size: 16px;
+}
+
+.fullscreen .doc-context-badge {
+  margin: 0 auto 0;
+  padding: 10px 20px;
+  max-width: 800px;
+  width: 100%;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  background: linear-gradient(135deg, rgba(58,159,216,0.04), rgba(58,159,216,0.02));
+}
+
+.fullscreen .doc-badge-text {
+  font-size: 13px;
+}
+
+.fullscreen .rag-switch-label {
+  font-size: 12px;
+}
+
+.fullscreen .thinking-toggle-btn {
+  font-size: 13px;
+  padding: 4px 14px;
+  border-radius: 14px;
+}
+
+.fullscreen .chat-messages {
+  padding: 30px 0;
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.fullscreen .welcome-icon {
+  font-size: 50px;
+  margin-bottom: 16px;
+}
+
+.fullscreen .welcome-text {
+  font-size: 20px;
+  margin-bottom: 10px;
+}
+
+.fullscreen .welcome-hint {
+  font-size: 15px;
+  margin-bottom: 24px;
+}
+
+.fullscreen .suggest-btn {
+  font-size: 14px;
+  padding: 12px 18px;
+}
+
+.fullscreen .message-wrapper {
+  margin-bottom: 24px;
+}
+
+.fullscreen .message-avatar {
+  width: 38px;
+  height: 38px;
+  font-size: 20px;
+}
+
+.fullscreen .message-bubble {
+  max-width: 720px;
+  padding: 16px 22px;
+  border-radius: 18px;
+}
+
+.fullscreen .message-content {
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.fullscreen .message-time {
+  font-size: 11px;
+}
+
+.fullscreen .thinking-panel {
+  margin-bottom: 14px;
+}
+
+.fullscreen .thinking-header {
+  padding: 10px 16px;
+}
+
+.fullscreen .thinking-label {
+  font-size: 14px;
+}
+
+.fullscreen .thinking-text {
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.fullscreen .thinking-body {
+  max-height: 360px;
+  padding: 0 16px 14px 16px;
+}
+
+.fullscreen .chat-input-area {
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 16px 0 24px;
+  border-top: 1px solid #e8e0d4;
+}
+
+.fullscreen .chat-input {
+  font-size: 15px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  min-height: 52px;
+}
+
+.fullscreen .send-btn {
+  width: 68px;
+  height: 68px;
+  border-radius: 16px;
+  font-size: 16px;
+}
+
+/* 全屏 markdown 字体放大 */
+.fullscreen .md-bubble :deep(h1) { font-size: 20px; }
+.fullscreen .md-bubble :deep(h2) { font-size: 18px; }
+.fullscreen .md-bubble :deep(h3) { font-size: 16px; }
+.fullscreen .md-bubble :deep(code) { font-size: 13px; }
+.fullscreen .md-bubble :deep(pre code) { font-size: 13px; }
+.fullscreen .md-bubble :deep(table) { font-size: 14px; }
 </style>

@@ -26,7 +26,7 @@ os.environ['MODELSCOPE_CACHE'] = mineru_cache_dir
 print(f"📦 模型缓存路径 → HF: {hf_cache_dir}")
 print(f"📦 模型缓存路径 → MinerU({os.environ['MINERU_MODEL_SOURCE']}): {mineru_cache_dir}")
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
@@ -616,6 +616,91 @@ def chat():
         print(f"Chat 错误: {str(e)}")
         return jsonify({'error': f'对话失败: {str(e)}'}), 500
 
+
+@app.route('/api/chat/stream', methods=['POST'])
+def chat_stream():
+    """流式 AI 对话接口（SSE）：支持深度思考开关，实时推送 thinking/content 事件。
+
+    请求体字段：
+      - message 用户消息
+      - document_context 文档概览
+      - chat_history 对话历史
+      - analysis_id RAG 索引 ID
+      - rag_mode auto | retrieve | full
+      - deep_thinking 是否开启深度思考 (boolean)
+    """
+    try:
+        data = request.json
+        message = data.get('message', '').strip()
+        document_context = data.get('document_context', '')
+        chat_history = data.get('chat_history', [])
+        analysis_id = data.get('analysis_id')
+        rag_mode = (data.get('rag_mode') or 'auto').lower()
+        deep_thinking = bool(data.get('deep_thinking', False))
+
+        if rag_mode not in ('auto', 'retrieve', 'full'):
+            rag_mode = 'auto'
+
+        if not message:
+            return jsonify({'error': '消息不能为空'}), 400
+
+        # ── RAG 检索（复用同步接口逻辑）──
+        rag_hits = []
+        rag_used_mode = 'none'
+        if analysis_id is not None:
+            try:
+                aid = int(analysis_id)
+                loaded = rag_indexer.load_index(aid, db)
+                if loaded:
+                    chunks, bm25 = loaded
+                    use_full = (
+                        rag_mode == 'full'
+                        or (rag_mode == 'auto' and rag_indexer.detect_global_intent(message))
+                    )
+                    if use_full:
+                        rag_hits = rag_indexer.retrieve_full_scan(chunks, max_chars=10000)
+                        rag_used_mode = 'full'
+                    else:
+                        rag_hits = rag_indexer.retrieve(message, chunks, bm25, top_k=5)
+                        rag_used_mode = 'retrieve' if rag_hits else 'none'
+            except (TypeError, ValueError):
+                pass
+            except Exception as e:
+                print(f'\u26a0\ufe0f RAG 检索失败（降级到截断上下文）: {e}')
+
+        if rag_hits:
+            ctx_budget = 10000 if rag_used_mode == 'full' else 2800
+            retrieved_block = rag_indexer.format_context(rag_hits, max_chars=ctx_budget)
+            header = '文档全文内容' if rag_used_mode == 'full' else '从文档中检索到的相关段落'
+            if document_context:
+                document_context = f"{document_context}\n\n===== {header} =====\n{retrieved_block}"
+            else:
+                document_context = f"===== {header} =====\n{retrieved_block}"
+
+        def generate():
+            """SSE 生成器"""
+            import json as _json
+            # 先发送 RAG 模式信息
+            yield f"event: meta\ndata: {_json.dumps({'rag_mode': rag_used_mode, 'deep_thinking': deep_thinking})}\n\n"
+
+            for event_type, event_data in analyzer.llm_service.chat_stream(
+                message, document_context, chat_history, deep_thinking=deep_thinking
+            ):
+                yield f"event: {event_type}\ndata: {_json.dumps(event_data, ensure_ascii=False)}\n\n"
+
+        return Response(
+            generate(),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',
+                'Connection': 'keep-alive',
+            }
+        )
+
+    except Exception as e:
+        print(f"Chat stream 错误: {str(e)}")
+        return jsonify({'error': f'流式对话失败: {str(e)}'}), 500
 @app.route('/api/providers', methods=['GET'])
 def get_providers():
     """返回所有可用 provider 及其模型列表（供前端动态渲染）"""
